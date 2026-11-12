@@ -5,7 +5,7 @@ import {
   activeSession, deleteSession, newSession, parseNoteValues, pauseSession, resumeSession,
   saveSession, sessionDuration, sessionState, startSession, stopSession,
 } from '../model.js';
-import { formatDuration, hhmm } from '../time.js';
+import { dateAt, formatDuration, hhmm } from '../time.js';
 import { Sheet, formatNumber } from '../ui.js';
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -156,22 +156,17 @@ export function StopSheet({ store, session, reload, notify, onClose }) {
     <//>`;
 }
 
-function atTime(date, time) {
-  const [y, m, d] = date.split('-').map(Number);
-  const [hh, mm] = time.split(':').map(Number);
-  return new Date(y, m - 1, d, hh, mm).getTime();
-}
 
 // Session nachtragen (session = null) oder bearbeiten.
-export function EditSessionSheet({ store, session, date, reload, notify, onClose }) {
+export function EditSessionSheet({ store, session, date, start, end, reload, notify, onClose }) {
   const isNew = !session;
-  const base = session || newSession({ ...lastTarget(store), startAt: atTime(date, '09:00'), manual: true });
+  const base = session || newSession({ ...lastTarget(store), startAt: dateAt(date, start || '09:00').getTime(), manual: true });
   const pausedMin = Math.round(base.pauses.reduce((s, p) => s + ((p.to ?? Date.now()) - p.from), 0) / 60000);
   const [target, setTarget] = useState({ areaId: base.areaId, goalId: base.goalId });
   const [form, setForm] = useState({
     date: base.date,
     start: hhmm(base.startAt),
-    end: base.endAt ? hhmm(base.endAt) : isNew ? '10:00' : hhmm(Date.now()),
+    end: base.endAt ? hhmm(base.endAt) : isNew ? end || '10:00' : hhmm(Date.now()),
     pause: String(pausedMin),
     note: base.note || '',
   });
@@ -179,8 +174,8 @@ export function EditSessionSheet({ store, session, date, reload, notify, onClose
   const running = session && !session.endAt;
 
   const save = async () => {
-    const startAt = atTime(form.date, form.start);
-    let endAt = atTime(form.date, form.end);
+    const startAt = dateAt(form.date, form.start).getTime();
+    let endAt = dateAt(form.date, form.end).getTime();
     if (endAt <= startAt) endAt += 86_400_000; // über Mitternacht
     const pause = Math.max(0, parseInt(form.pause, 10) || 0) * 60000;
     if (pause >= endAt - startAt) return notify('Die Pause ist länger als die Session.', 'error');

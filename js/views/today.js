@@ -1,25 +1,23 @@
 // Tagesplan: Routinen, Tagesziele und Timetable sind dieselben Einträge, nur anders gezeigt.
 
-import { html, useRef, useState } from '../vendor/preact-htm.js';
+import { html, useState } from '../vendor/preact-htm.js';
 import {
   WINDOWS, activeSession, addBlock, addTask, carryOver, dayStatus, deleteEntry, hoursByArea,
   markReviewed, sessionDuration, setEntryDone, setPlanned, streak, updateEntry, waterGoal, waterTotal, weekStart,
 } from '../model.js';
-import { hhmm } from '../time.js';
+import { appMinutes, formatMinutes as fmtMin, hhmm, slotMinutes as toMin } from '../time.js';
 import { Icon, Sheet, formatNumber } from '../ui.js';
 import {
   EditSessionSheet, SessionCard, StartSheet, StopSheet, TargetPicker, startFromEntry, targetLabel, useTick,
 } from './session.js';
 import { ReminderBar } from './reminders.js';
 
-const pad = (n) => String(n).padStart(2, '0');
-const toMin = (s) => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
-const fmtMin = (m) => `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`;
 const liters = (ml) => (ml / 1000).toLocaleString('de-DE', { maximumFractionDigits: 2 });
 const hours = (h) => (h < 1 ? `${Math.round(h * 60)} min` : `${h.toLocaleString('de-DE', { maximumFractionDigits: 1 })} h`);
 
-const HOUR_PX = 56;
-const SNAP = 15;
+const DAY_FROM = 6 * 60;   // Liste beginnt frühestens um 6 Uhr …
+const DAY_TO = 27 * 60;    // … und endet um 3 Uhr nachts (Tageswechsel)
+const MIN_GAP = 30;        // kürzere Lücken werden nicht als „frei“ gezeigt
 const DEFAULT_LEN = { routine: 30, task: 30, block: 60 };
 const WINDOW_ORDER = ['morning', 'midday', 'evening', 'fixed'];
 
@@ -37,7 +35,7 @@ export function Today({ store, reload, notify }) {
   const entries = store.entries.filter((e) => e.date === today);
   const session = activeSession(store.sessions);
   const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const nowMin = appMinutes(now);
   const reviewTime = toMin(store.settings.reviewTime);
   const [sheet, setSheet] = useState(null);
   const close = () => setSheet(null);
@@ -56,7 +54,7 @@ export function Today({ store, reload, notify }) {
     ${!day?.plannedAt && nowMin < reviewTime && html`
       <section class="panel callout">
         <h2 class="label">Tag planen</h2>
-        <p class="muted small">Routinen sind schon drin. Ergänze Tagesziele und zieh Einträge am Griff ⠿ in den Timetable.</p>
+        <p class="muted small">Routinen sind schon drin. Ergänze Tagesziele und tipp im Timetable auf eine freie Zeit, um sie zu belegen.</p>
         <button class="btn secondary" onClick=${async () => { await setPlanned(today); reload(); }}>Plan steht</button>
       </section>`}
 
@@ -69,12 +67,12 @@ export function Today({ store, reload, notify }) {
 
     <${Routines} store=${store} entries=${entries} reload=${reload} />
     <${Tasks} store=${store} entries=${entries} reload=${reload} notify=${notify} onEdit=${(e) => setSheet({ type: 'entry', entry: e })} />
-    <${Timetable} store=${store} entries=${entries} nowMin=${nowMin} reload=${reload}
+    <${Timetable} store=${store} entries=${entries} nowMin=${nowMin} running=${Boolean(session)}
       onEdit=${(e) => setSheet({ type: 'entry', entry: e })}
+      onSession=${(s) => setSheet({ type: 'edit', session: s })}
       onStart=${startEntry}
-      onAddBlock=${() => setSheet({ type: 'block' })} />
-    <${SessionsToday} store=${store} onEdit=${(s) => setSheet({ type: 'edit', session: s })}
-      onAdd=${() => setSheet({ type: 'edit', session: null })} />
+      onSlot=${(from, to) => setSheet({ type: 'slot', from, to })} />
+    <${Hours} store=${store} onAdd=${() => setSheet({ type: 'edit', session: null })} />
 
     ${day?.reviewedAt && html`
       <p class="center small"><button class="link" onClick=${() => setSheet({ type: 'review' })}>Rückblick erneut öffnen</button></p>`}
@@ -83,9 +81,11 @@ export function Today({ store, reload, notify }) {
 
     ${sheet?.type === 'start' && html`<${StartSheet} ...${ctx} onClose=${close} />`}
     ${sheet?.type === 'stop' && html`<${StopSheet} ...${ctx} session=${sheet.session} onClose=${close} />`}
-    ${sheet?.type === 'edit' && html`<${EditSessionSheet} ...${ctx} session=${sheet.session} date=${today} onClose=${close} />`}
+    ${sheet?.type === 'edit' && html`<${EditSessionSheet} ...${ctx} session=${sheet.session} date=${today}
+      start=${sheet.start} end=${sheet.end} onClose=${close} />`}
     ${sheet?.type === 'entry' && html`<${EntrySheet} ...${ctx} entry=${sheet.entry} onStart=${startEntry} onClose=${close} />`}
-    ${sheet?.type === 'block' && html`<${BlockSheet} ...${ctx} nowMin=${nowMin} onClose=${close} />`}
+    ${sheet?.type === 'slot' && html`<${SlotSheet} ...${ctx} from=${sheet.from} to=${sheet.to} nowMin=${nowMin}
+      onBackfill=${(start, end) => setSheet({ type: 'edit', session: null, start, end })} onClose=${close} />`}
     ${sheet?.type === 'review' && html`<${ReviewSheet} ...${ctx} onClose=${close} />`}`;
 }
 
@@ -225,128 +225,101 @@ function Tasks({ store, entries, reload, notify, onEdit }) {
     </section>`;
 }
 
-// ---------- Timetable ----------
+// ---------- Timetable: Tagesliste ----------
+//
+// Geplante Einträge und Sessions nach Uhrzeit, dazwischen freie Zeiten zum Antippen.
+// Zeiten vor 3 Uhr gehören ans Ende des Tages (nach Mitternacht).
 
-// Überlappende Blöcke nebeneinander: Spalten pro zusammenhängender Gruppe.
-function layoutColumns(items) {
-  const sorted = [...items].sort((a, b) => a.range.start - b.range.start || b.range.end - a.range.end);
-  const out = [];
-  let cluster = [], cols = [], clusterEnd = -1;
-  const flush = () => { cluster.forEach((c) => { c.cols = cols.length; }); out.push(...cluster); cluster = []; cols = []; };
-  for (const item of sorted) {
-    if (item.range.start >= clusterEnd && cluster.length) flush();
-    let col = cols.findIndex((end) => end <= item.range.start);
-    if (col < 0) { col = cols.length; cols.push(0); }
-    cols[col] = item.range.end;
-    cluster.push({ ...item, col });
-    clusterEnd = Math.max(clusterEnd, item.range.end);
-  }
-  flush();
-  return out;
+const roundUp = (m, step = 15) => Math.ceil(m / step) * step;
+
+function agendaItems(store, entries) {
+  const planned = entries
+    .filter((e) => e.slot?.start && !e.movedTo)
+    .map((e) => ({ type: 'entry', id: e.id, e, ...slotRange(e) }));
+  const sessions = store.sessions
+    .filter((s) => s.date === store.today)
+    .map((s) => ({ type: 'session', id: s.id, s, start: appMinutes(s.startAt), end: s.endAt ? appMinutes(s.endAt) : appMinutes(new Date()) }));
+  return [...planned, ...sessions].sort((x, y) => x.start - y.start || (x.type === 'session' ? -1 : 1));
 }
 
-function Timetable({ store, entries, nowMin, reload, onEdit, onStart, onAddBlock }) {
-  const gridRef = useRef(null);
-  const trayRef = useRef(null);
-  const [drag, setDrag] = useState(null);
-  const live = entries.filter((e) => !e.movedTo);
-  const scheduled = live.filter((e) => e.slot?.start).map((e) => ({ e, range: slotRange(e) }));
-  const tray = live.filter((e) => !e.slot?.start && e.kind !== 'block' && !e.doneAt);
-  const first = Math.min(6, ...scheduled.map((s) => Math.floor(s.range.start / 60)));
-  const height = (24 - first) * HOUR_PX;
-  const color = (e) => store.areas.find((a) => a.id === e.areaId)?.color || '#6e6782';
-  const fixed = (e) => Boolean(store.routines.find((r) => r.id === e.routineId)?.fixed);
+// Freie Zeiten ab jetzt bis zum Tagesende.
+function freeGaps(items, nowMin) {
+  const gaps = [];
+  let cursor = Math.max(DAY_FROM, roundUp(nowMin));
+  for (const it of [...items].sort((x, y) => x.start - y.start)) {
+    if (it.start - cursor >= MIN_GAP) gaps.push({ type: 'gap', id: `gap-${cursor}`, start: cursor, end: it.start });
+    cursor = Math.max(cursor, it.end);
+  }
+  if (DAY_TO - cursor >= MIN_GAP) gaps.push({ type: 'gap', id: `gap-${cursor}`, start: cursor, end: DAY_TO });
+  return gaps;
+}
 
-  const locate = (x, y) => {
-    const g = gridRef.current.getBoundingClientRect();
-    if (x >= g.left && x <= g.right && y >= g.top && y <= g.bottom) {
-      const m = first * 60 + ((y - g.top) / HOUR_PX) * 60;
-      return { minute: Math.max(first * 60, Math.min(1440 - SNAP, Math.round(m / SNAP) * SNAP)) };
-    }
-    const t = trayRef.current.getBoundingClientRect();
-    if (x >= t.left && x <= t.right && y >= t.top && y <= t.bottom) return { tray: true };
-    return {};
-  };
-
-  const handle = (entry) => ({
-    class: 'tt-handle',
-    'aria-label': `${entry.title} verschieben`,
-    onPointerDown: (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch {}
-      setDrag({ entry, x: ev.clientX, y: ev.clientY, ...locate(ev.clientX, ev.clientY) });
-    },
-    onPointerMove: (ev) => {
-      if (!drag || drag.entry.id !== entry.id) return;
-      if (ev.clientY < 90) scrollBy(0, -12);
-      else if (ev.clientY > innerHeight - 140) scrollBy(0, 12);
-      setDrag({ entry, x: ev.clientX, y: ev.clientY, ...locate(ev.clientX, ev.clientY) });
-    },
-    onPointerUp: async () => {
-      const d = drag;
-      setDrag(null);
-      if (!d || d.entry.id !== entry.id) return;
-      if (d.minute != null) {
-        const len = d.entry.slot?.start ? slotRange(d.entry).end - slotRange(d.entry).start : DEFAULT_LEN[d.entry.kind];
-        await updateEntry(d.entry.id, { slot: { start: fmtMin(d.minute), end: fmtMin(Math.min(d.minute + len, 1440)) } });
-        reload();
-      } else if (d.tray && d.entry.kind !== 'block') {
-        await updateEntry(d.entry.id, { slot: null });
-        reload();
-      }
-    },
-    onPointerCancel: () => setDrag(null),
-  });
-
-  const tap = (e) => (e.areaId && !e.doneAt ? onStart(e) : onEdit(e));
+function Timetable({ store, entries, nowMin, running, onEdit, onSession, onStart, onSlot }) {
+  const items = agendaItems(store, entries);
+  const rows = [...items, ...freeGaps(items, nowMin), { type: 'now', id: 'now', start: nowMin, end: nowMin }]
+    .sort((x, y) => x.start - y.start || (x.type === 'now' ? -1 : y.type === 'now' ? 1 : 0));
+  const unscheduled = entries.filter((e) => !e.slot?.start && e.kind !== 'block' && !e.doneAt && !e.movedTo);
+  const area = (id) => store.areas.find((a) => a.id === id);
+  const color = (id) => area(id)?.color || '#6e6782';
+  const range = (it) => `${fmtMin(it.start)}–${fmtMin(it.end)}`;
 
   return html`
     <section class="panel">
       <div class="panel-head">
         <h2 class="label">Timetable</h2>
-        <button class="btn secondary small-btn" onClick=${onAddBlock}>+ Block</button>
+        <button class="btn secondary small-btn" onClick=${() => onSlot(roundUp(nowMin), DAY_TO)}>+ Eintrag</button>
       </div>
-      <div class="tray ${drag?.tray ? 'over' : ''}" ref=${trayRef}>
-        ${tray.length === 0
-          ? html`<span class="muted small">Alles hat eine Uhrzeit. Zum Entfernen einen Block hierher ziehen.</span>`
-          : tray.map((e) => html`
-            <div class="chip ${drag?.entry.id === e.id ? 'dragging' : ''}" key=${e.id} style="--c:${color(e)}">
-              <span ...${handle(e)}>⠿</span>
-              <button class="plain chip-text" onClick=${() => onEdit(e)}>${e.title}</button>
-            </div>`)}
-      </div>
-      <div class="tt-grid" ref=${gridRef} style="height:${height}px">
-        ${Array.from({ length: 24 - first }, (_, i) => html`
-          <div class="tt-hour" key=${i} style="top:${i * HOUR_PX}px"><span class="num">${pad(first + i)}</span></div>`)}
-        ${nowMin >= first * 60 && html`<div class="tt-now" style="top:${((nowMin - first * 60) / 60) * HOUR_PX}px"></div>`}
-        ${layoutColumns(scheduled).map(({ e, range, col, cols }) => {
-          const top = ((range.start - first * 60) / 60) * HOUR_PX;
-          const h = Math.max(30, ((Math.min(range.end, 1440) - range.start) / 60) * HOUR_PX - 2);
+      <ol class="agenda">
+        ${rows.map((it) => {
+          if (it.type === 'now') {
+            return html`<li key="now" class="agenda-now"><span class="num">${fmtMin(nowMin)}</span></li>`;
+          }
+          if (it.type === 'gap') {
+            return html`
+              <li key=${it.id}>
+                <button class="plain agenda-gap" onClick=${() => onSlot(it.start, it.end)}>
+                  <span>frei ${range(it)}</span><span class="agenda-plus" aria-hidden="true">+</span>
+                </button>
+              </li>`;
+          }
+          if (it.type === 'session') {
+            const s = it.s;
+            return html`
+              <li key=${it.id} class="agenda-row session" style="--c:${color(s.areaId)}">
+                <span class="agenda-time num">${fmtMin(it.start)}</span>
+                <span class="agenda-mark ok-text" aria-hidden="true">${s.endAt ? '✓' : '●'}</span>
+                <button class="plain agenda-main" onClick=${() => onSession(s)}>
+                  <span class="agenda-title">Session · ${targetLabel(store, s)}</span>
+                  <span class="agenda-sub num">${s.endAt ? range(it) : `seit ${fmtMin(it.start)}, läuft`} · ${hours(sessionDuration(s) / 3_600_000)}${s.manual ? ' · nachgetragen' : ''}${s.note ? ` · ${s.note}` : ''}</span>
+                </button>
+              </li>`;
+          }
+          const e = it.e;
+          const canStart = e.areaId && !e.doneAt && !running;
           return html`
-            <div key=${e.id} class="tt-block kind-${e.kind} ${e.doneAt ? 'done' : ''} ${drag?.entry.id === e.id ? 'dragging' : ''}"
-              style="top:${top}px;height:${h}px;--col:${col};--cols:${cols};--c:${color(e)}">
-              ${!fixed(e) && html`<span ...${handle(e)}>⠿</span>`}
-              <button class="plain tt-body" onClick=${() => tap(e)}
-                aria-label="${e.title}${e.areaId && !e.doneAt ? ', Session starten' : ''}">
-                <span class="tt-title">${e.doneAt ? '✓ ' : ''}${e.title}</span>
-                <span class="tt-time num">${e.slot.start}${e.slot.end ? `–${e.slot.end}` : ''}${e.areaId && !e.doneAt ? ' · ▶' : ''}</span>
+            <li key=${it.id} class="agenda-row ${e.doneAt ? 'done' : ''}" style="--c:${color(e.areaId)}">
+              <span class="agenda-time num">${fmtMin(it.start)}</span>
+              <span class="agenda-mark ${e.doneAt ? 'ok-text' : 'muted'}" aria-hidden="true">${e.doneAt ? '✓' : '○'}</span>
+              <button class="plain agenda-main" onClick=${() => onEdit(e)} aria-label="${e.title} bearbeiten">
+                <span class="agenda-title">${e.title}</span>
+                <span class="agenda-sub num">${range(it)}${area(e.areaId) && area(e.areaId).name !== e.title ? ` · ${area(e.areaId).name}` : ''}</span>
               </button>
-              <button class="plain tt-more" onClick=${() => onEdit(e)} aria-label="${e.title} bearbeiten">⋯</button>
-            </div>`;
+              ${canStart && html`<button class="agenda-play" onClick=${() => onStart(e)} aria-label="Session für ${e.title} starten">▶</button>`}
+            </li>`;
         })}
-        ${drag?.minute != null && html`
-          <div class="tt-drop" style="top:${((drag.minute - first * 60) / 60) * HOUR_PX}px"><span class="num">${fmtMin(drag.minute)}</span></div>`}
-      </div>
-      <p class="muted small tt-hint">Tipp auf einen Block mit Bereich startet die Session. ⋯ bearbeitet.</p>
-      ${drag && html`<div class="chip ghost" style="left:${drag.x}px;top:${drag.y}px;--c:${color(drag.entry)}">${drag.entry.title}</div>`}
+      </ol>
+      ${unscheduled.length > 0 && html`
+        <div class="agenda-unscheduled">
+          <span class="muted small">Ohne Uhrzeit:</span>
+          ${unscheduled.map((e) => html`
+            <button key=${e.id} class="chip plain-chip" style="--c:${color(e.areaId)}" onClick=${() => onEdit(e)}>${e.title}</button>`)}
+        </div>`}
     </section>`;
 }
 
-// ---------- Sessions heute und Stunden ----------
+// ---------- Stunden ----------
 
-function SessionsToday({ store, onEdit, onAdd }) {
-  const list = store.sessions.filter((s) => s.date === store.today).sort((a, b) => a.startAt - b.startAt);
+function Hours({ store, onAdd }) {
   const areas = [...store.areas].sort((a, b) => a.order - b.order);
   const ranges = [
     ['Heute', hoursByArea(store, store.today, store.today)],
@@ -356,21 +329,9 @@ function SessionsToday({ store, onEdit, onAdd }) {
   return html`
     <section class="panel">
       <div class="panel-head">
-        <h2 class="label">Sessions</h2>
-        <button class="btn secondary small-btn" onClick=${onAdd}>+ Nachtragen</button>
+        <h2 class="label">Stunden</h2>
+        <button class="btn secondary small-btn" onClick=${onAdd}>+ Session nachtragen</button>
       </div>
-      ${list.length === 0 && html`<p class="muted small">Heute noch keine Session.</p>`}
-      <ul class="list">
-        ${list.map((s) => html`
-          <li key=${s.id}>
-            <button class="plain session-row" onClick=${() => onEdit(s)}>
-              <span class="num muted small">${hhmm(s.startAt)}–${s.endAt ? hhmm(s.endAt) : 'läuft'}</span>
-              <span class="session-row-main">${targetLabel(store, s)}</span>
-              <span class="num">${hours(sessionDuration(s) / 3_600_000)}</span>
-              ${s.note && html`<span class="muted small session-note">${s.note}</span>`}
-            </button>
-          </li>`)}
-      </ul>
       <table class="hours num">
         <thead><tr><th></th>${ranges.map(([l]) => html`<th>${l}</th>`)}</tr></thead>
         <tbody>
@@ -384,16 +345,20 @@ function SessionsToday({ store, onEdit, onAdd }) {
 
 // ---------- Sheets ----------
 
+const LENGTHS = [15, 30, 45, 60, 90, 120];
+
+// Eintrag bearbeiten: Name und Zeit ändern, Session starten, abhaken, löschen.
 function EntrySheet({ store, entry, reload, notify, onStart, onClose }) {
   const [title, setTitle] = useState(entry.title);
   const [start, setStart] = useState(entry.slot?.start || '');
-  const [end, setEnd] = useState(entry.slot?.end || '');
+  const [end, setEnd] = useState(entry.slot?.end || (entry.slot?.start ? fmtMin(slotRange(entry).end) : ''));
   const routine = store.routines.find((r) => r.id === entry.routineId);
-  const editableTitle = entry.kind !== 'routine';
+  const length = start && end ? ((toMin(end) - toMin(start)) + 1440) % 1440 : null;
+  const setLength = (min) => { if (start) setEnd(fmtMin(toMin(start) + min)); };
 
   const save = async () => {
-    const slot = start ? { start, end: end || fmtMin(Math.min(toMin(start) + DEFAULT_LEN[entry.kind], 1440)) } : null;
-    await updateEntry(entry.id, { title: editableTitle ? title.trim() || entry.title : entry.title, slot });
+    const slot = start ? { start, end: end || fmtMin(toMin(start) + DEFAULT_LEN[entry.kind]) } : null;
+    await updateEntry(entry.id, { title: title.trim() || entry.title, slot });
     await reload();
     onClose();
   };
@@ -409,53 +374,80 @@ function EntrySheet({ store, entry, reload, notify, onStart, onClose }) {
     notify('Gelöscht.');
     onClose();
   };
-  const start_ = async () => { onClose(); await onStart(entry); };
+  const startNow = async () => { onClose(); await onStart(entry); };
 
   return html`
     <${Sheet} title=${entry.kind === 'block' ? 'Block' : entry.kind === 'routine' ? 'Routine' : 'Tagesziel'} onClose=${onClose}>
-      ${editableTitle
-        ? html`<label class="field">Titel<input value=${title} onInput=${(e) => setTitle(e.target.value)} /></label>`
-        : html`<p><b>${entry.title}</b><br /><span class="muted small">Mindestens: ${routine?.minVersion}</span></p>`}
-      ${entry.areaId && html`<p class="muted small">${targetLabel(store, entry)}</p>`}
-      ${routine?.fixed
-        ? html`<p class="muted small">Feste Zeit: ${entry.slot?.start} Uhr (NY-Open, automatisch umgerechnet)</p>`
-        : html`
-          <div class="form-grid">
-            <label class="field">Von<input type="time" value=${start} onInput=${(e) => setStart(e.target.value)} /></label>
-            <label class="field">Bis<input type="time" value=${end} onInput=${(e) => setEnd(e.target.value)} /></label>
-          </div>
-          ${entry.kind !== 'block' && start && html`<button class="link small" onClick=${() => { setStart(''); setEnd(''); }}>Ohne Uhrzeit</button>`}`}
+      <label class="field">Name<input value=${title} onInput=${(e) => setTitle(e.target.value)} /></label>
+      ${routine && html`<p class="muted small">Mindestens: ${routine.minVersion}${entry.kind === 'routine' ? ' · Name und Zeit gelten nur für heute.' : ''}</p>`}
+      ${routine?.fixed && html`<p class="muted small">Normalerweise ${entry.slot?.start} Uhr (NY-Open, automatisch umgerechnet).</p>`}
+      <div class="form-grid">
+        <label class="field">Von<input type="time" value=${start} onInput=${(e) => setStart(e.target.value)} /></label>
+        <label class="field">Bis<input type="time" value=${end} onInput=${(e) => setEnd(e.target.value)} /></label>
+      </div>
+      ${start && html`
+        <div class="chips lengths" role="group" aria-label="Dauer">
+          ${LENGTHS.map((m) => html`<button type="button" key=${m} class="pick ${length === m ? 'on' : ''}" onClick=${() => setLength(m)}>${m < 60 ? `${m} min` : `${m / 60} h`}</button>`)}
+        </div>`}
+      ${entry.kind !== 'block' && start && html`<button class="link small" onClick=${() => { setStart(''); setEnd(''); }}>Ohne Uhrzeit</button>`}
       <div class="row sheet-actions">
-        ${!routine?.fixed && html`<button class="btn" onClick=${save}>Speichern</button>`}
+        <button class="btn" onClick=${save}>Speichern</button>
+        ${entry.areaId && !entry.doneAt && html`<button class="btn secondary" onClick=${startNow}>▶ Session starten</button>`}
         ${entry.kind !== 'block' && html`<button class="btn secondary" onClick=${toggle}>${entry.doneAt ? 'Doch offen' : 'Erledigt'}</button>`}
-        ${entry.areaId && !entry.doneAt && html`<button class="btn secondary" onClick=${start_}>Session starten</button>`}
         ${entry.kind !== 'routine' && html`<button class="btn secondary danger" onClick=${remove}>Löschen</button>`}
       </div>
     <//>`;
 }
 
-function BlockSheet({ store, reload, onClose, nowMin }) {
-  const area = [...store.areas].sort((a, b) => a.order - b.order)[0];
-  const [target, setTarget] = useState({ areaId: area?.id ?? null, goalId: null });
-  const next = Math.min(23 * 60, Math.ceil((nowMin + 1) / 60) * 60);
-  const [start, setStart] = useState(fmtMin(next));
-  const [end, setEnd] = useState(fmtMin(Math.min(next + 60, 1440)));
-  const save = async () => {
-    if (!start) return;
-    const goal = store.goals.find((g) => g.id === target.goalId);
-    const title = goal ? goal.title : store.areas.find((a) => a.id === target.areaId)?.name || 'Block';
-    await addBlock(store.today, { title, ...target, start, end: end || fmtMin(Math.min(toMin(start) + 60, 1440)) });
+// Freie Zeit belegen: offenen Eintrag einplanen, neuen Block anlegen oder Session nachtragen.
+function SlotSheet({ store, reload, from, to, nowMin, onBackfill, onClose }) {
+  const [start, setStart] = useState(fmtMin(from));
+  const [end, setEnd] = useState(fmtMin(Math.min(from + 60, to)));
+  const [mode, setMode] = useState('pick');
+  const first = [...store.areas].sort((a, b) => a.order - b.order)[0];
+  const [target, setTarget] = useState({ areaId: first?.id ?? null, goalId: null });
+  const [name, setName] = useState('');
+  const open = store.entries.filter((e) => e.date === store.today && !e.slot?.start && e.kind !== 'block' && !e.doneAt && !e.movedTo);
+  const past = toMin(start) < nowMin;
+
+  const place = async (entry) => {
+    await updateEntry(entry.id, { slot: { start, end } });
     await reload();
     onClose();
   };
+  const createBlock = async () => {
+    const goal = store.goals.find((g) => g.id === target.goalId);
+    const title = name.trim() || goal?.title || store.areas.find((a) => a.id === target.areaId)?.name || 'Block';
+    await addBlock(store.today, { title, ...target, start, end });
+    await reload();
+    onClose();
+  };
+
   return html`
-    <${Sheet} title="Zeitblock" onClose=${onClose}>
-      <${TargetPicker} store=${store} value=${target} onChange=${setTarget} />
+    <${Sheet} title="Zeit belegen" onClose=${onClose}>
       <div class="form-grid">
         <label class="field">Von<input type="time" value=${start} onInput=${(e) => setStart(e.target.value)} /></label>
         <label class="field">Bis<input type="time" value=${end} onInput=${(e) => setEnd(e.target.value)} /></label>
       </div>
-      <div class="row sheet-actions"><button class="btn" onClick=${save}>Block anlegen</button></div>
+      <div class="segmented slot-mode">
+        <label class=${mode === 'pick' ? 'on' : ''}><input type="radio" name="slotmode" checked=${mode === 'pick'} onChange=${() => setMode('pick')} />Offener Eintrag</label>
+        <label class=${mode === 'block' ? 'on' : ''}><input type="radio" name="slotmode" checked=${mode === 'block'} onChange=${() => setMode('block')} />Neuer Block</label>
+      </div>
+      ${mode === 'pick' && html`
+        ${open.length === 0 && html`<p class="muted small">Alles hat schon eine Uhrzeit. Leg einen neuen Block an.</p>`}
+        <div class="slot-list">
+          ${open.map((e) => html`
+            <button key=${e.id} class="slot-pick" style="--c:${store.areas.find((a) => a.id === e.areaId)?.color || '#6e6782'}" onClick=${() => place(e)}>
+              ${e.title}<span class="muted small">${e.kind === 'routine' ? 'Routine' : 'Tagesziel'}</span>
+            </button>`)}
+        </div>`}
+      ${mode === 'block' && html`
+        <${TargetPicker} store=${store} value=${target} onChange=${setTarget} />
+        <label class="field">Name <span class="muted">(optional)</span><input value=${name} onInput=${(e) => setName(e.target.value)} placeholder="z. B. TikToks schneiden" /></label>
+        <div class="row sheet-actions"><button class="btn" onClick=${createBlock}>Block anlegen</button></div>`}
+      ${past && html`
+        <p class="small slot-backfill">Schon vorbei?
+          <button class="link" onClick=${() => onBackfill(start, end)}>Als Session nachtragen</button></p>`}
     <//>`;
 }
 

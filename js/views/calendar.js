@@ -2,7 +2,7 @@
 
 import { html, useState } from '../vendor/preact-htm.js';
 import {
-  PHOTO_SLOTS, dayActivity, dayStatus, goalMoves, hoursByArea, sessionDuration, waterGoal, waterTotal,
+  PHOTO_SLOTS, dayProductivity, dayStatus, firstActiveDay, goalMoves, hoursByArea, sessionDuration, waterGoal, waterTotal,
 } from '../model.js';
 import { addDays, formatDate, hhmm, parseDayKey } from '../time.js';
 import { BlobImage, Icon, Sheet, formatNumber } from '../ui.js';
@@ -59,12 +59,12 @@ function MonthGrid({ store, days, onPick }) {
       ${Array.from({ length: lead }, (_, i) => html`<div key=${`x${i}`}></div>`)}
       ${days.map((key) => {
         const future = key > store.today;
-        const a = dayActivity(store, key);
+        const a = dayProductivity(store, key);
         const kept = !future && dayStatus(store, key).fulfilled;
         return html`
-          <button key=${key} class="cal-day lvl-${a.level} ${key === store.today ? 'today' : ''}" disabled=${future}
+          <button key=${key} class="cal-day lvl-${a.gold ? 'gold' : a.level} ${key === store.today ? 'today' : ''}" disabled=${future}
             onClick=${() => onPick(key)}
-            aria-label="${formatDate(key, { weekday: 'long', day: 'numeric', month: 'long' })}${kept ? ', Plan erfüllt' : ''}${a.photos ? `, ${a.photos} Fotos` : ''}">
+            aria-label="${formatDate(key, { weekday: 'long', day: 'numeric', month: 'long' })}${a.level ? `, ${a.gold ? 'Gold-Tag' : `${Math.round(a.score * 100)} % produktiv`}` : ''}${kept ? ', Plan erfüllt' : ''}">
             <span class="num">${Number(key.slice(8))}</span>
             ${kept && html`<span class="cal-kept"><${Icon} name="flamme" scale=${2} /></span>`}
             ${a.photos > 0 && html`<span class="cal-photo" aria-hidden="true"></span>`}
@@ -72,9 +72,10 @@ function MonthGrid({ store, days, onPick }) {
       })}
     </div>
     <div class="cal-legend small muted">
-      <span>weniger</span>
-      ${[0, 1, 2, 3, 4].map((l) => html`<span class="cal-swatch lvl-${l}" key=${l}></span>`)}
-      <span>mehr</span>
+      <span>wenig</span>
+      ${[1, 2, 3, 4, 5].map((l) => html`<span class="cal-swatch lvl-${l}" key=${l}></span>`)}
+      <span>viel</span>
+      <span class="cal-swatch lvl-gold"></span><span>Gold</span>
       <span class="cal-legend-kept"><${Icon} name="flamme" scale=${2} /> Plan erfüllt</span>
     </div>`;
 }
@@ -104,16 +105,20 @@ function PhotoRows({ store, days, onPick }) {
 }
 
 function MonthSummary({ store, days }) {
-  const past = days.filter((k) => k <= store.today);
+  // Nur Tage seit dem ersten Eintrag zählen.
+  const start = firstActiveDay(store) ?? store.today;
+  const past = days.filter((k) => k <= store.today && k >= start);
   if (!past.length) return null;
   const h = hoursByArea(store, past[0], past.at(-1));
   const kept = past.filter((k) => dayStatus(store, k).fulfilled).length;
+  const gold = past.filter((k) => dayProductivity(store, k).gold).length;
   const photoDays = past.filter((k) => store.photos.some((p) => p.date === k && p.slot)).length;
   const areas = [...store.areas].sort((a, b) => a.order - b.order);
   return html`
     <section class="panel">
       <h2 class="label">Monat</h2>
       <dl class="kv">
+        <dt>Gold-Tage</dt><dd>${gold}</dd>
         <dt>Plan erfüllt</dt><dd>${kept} von ${past.length} Tagen</dd>
         <dt>Tage mit Fotos</dt><dd>${photoDays}</dd>
         ${areas.map((a) => html`<dt key=${a.id}>${a.name}</dt><dd>${h[a.id] ? hours(h[a.id]) : '–'}</dd>`)}
@@ -136,6 +141,8 @@ function DaySheet({ store, date, onClose, onMove }) {
   const areas = [...store.areas].sort((a, b) => a.order - b.order);
   const moves = goalMoves(store, date);
   const empty = !entries.length && !photos.length && !sessions.length && !waterTotal(day) && !moves.length;
+  const prod = dayProductivity(store, date);
+  const pct = (x) => `${Math.round(x * 100)} %`;
 
   return html`
     <${Sheet} title=${formatDate(date, { weekday: 'long', day: 'numeric', month: 'long' })} onClose=${onClose}>
@@ -155,6 +162,14 @@ function DaySheet({ store, date, onClose, onMove }) {
         })}
       </div>
       ${big && html`<button class="plain photo-full" onClick=${() => setBig(null)} aria-label="Foto schließen"><${BlobImage} blob=${big.blob} alt="" /></button>`}
+
+      ${prod.level > 0 && html`
+        <div class="prod lvl-${prod.gold ? 'gold' : prod.level}">
+          <span class="prod-score">${prod.gold ? 'Gold-Tag' : `${pct(prod.score)} produktiv`}</span>
+          <span class="prod-parts small">
+            Arbeit ${hours(prod.workHours)}/${prod.workGoal} h · Routinen ${prod.routinesDone}/${prod.routinesTotal} · Wasser ${liters(prod.water)}/${liters(prod.goal)} l
+          </span>
+        </div>`}
 
       <dl class="kv small day-kv">
         <dt>Wasser</dt><dd>${liters(waterTotal(day))} / ${liters(waterGoal(day, store.settings))} l</dd>

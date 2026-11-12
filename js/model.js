@@ -28,13 +28,16 @@ export const COUNT_MODES = { sum: 'Summe', best: 'Bestwert', current: 'Stand' };
 export const WINDOWS = { morning: 'morgens', midday: 'mittags', evening: 'abends', fixed: 'feste Zeit' };
 
 export const DEFAULT_SETTINGS = {
-  waterGoalMl: 4000,
+  waterGoalMl: 3500,
   waterQuick: [300, 500],
   location: { name: 'Bangkok', lat: 13.7563, lon: 100.5018 },
   restDaysPerWeek: 2,
   exportReminderDays: 21,
   sessionLongHours: 3,
   reviewTime: '22:30',
+  // Bereiche, deren Session-Stunden als Arbeit zählen (Kalenderfarbe, Gold-Tag).
+  workAreaIds: null,
+  workGoalHours: 6,
   // Erinnerungen (nur in der App); fehlende Einträge gelten als eingeschaltet.
   reminders: {},
   planTime: '08:00',
@@ -147,27 +150,40 @@ export async function saveSettings(patch) {
 }
 
 // Legt den Tag an und erzeugt die Routine-Einträge, falls noch nicht geschehen.
-// Vergangene Tage werden nicht nachträglich befüllt.
-export async function ensureDay(key = dayKey()) {
-  const [routines, entries] = await Promise.all([db.getAll('routines'), db.getAllBy('entries', 'date', key)]);
-  const day = (await db.get('days', key)) || newDay(key);
-  const have = new Set(entries.filter((e) => e.routineId).map((e) => e.routineId));
-  const fresh = [];
-  for (const r of routines.sort((a, b) => a.order - b.order)) {
-    if (have.has(r.id)) continue;
-    const due = routineOnDay(r, key);
-    if (!due) continue;
-    fresh.push(newEntry({
-      date: key, kind: 'routine', title: r.title, routineId: r.id,
-      areaId: r.areaId, goalId: r.goalId, order: r.order,
-      slot: due.at ? { start: hhmm(due.at), end: null } : null,
-    }));
+// Vergangene Tage werden nicht nachträglich befüllt. Lesen und Schreiben passieren in
+// einer Transaktion, und gleichzeitige Aufrufe teilen sich denselben Lauf: So entstehen
+// keine doppelten Routinen, wenn die App aufwacht und der Minuten-Takt gleichzeitig feuert.
+const ensuring = new Map();
+export function ensureDay(key = dayKey()) {
+  if (!ensuring.has(key)) {
+    ensuring.set(key, createDay(key).finally(() => ensuring.delete(key)));
   }
-  await db.tx(['days', 'entries'], 'readwrite', (s) => {
-    s.days.put(day);
-    for (const e of fresh) s.entries.put(e);
+  return ensuring.get(key);
+}
+
+const read = (request) => new Promise((resolve, reject) => {
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error);
+});
+
+async function createDay(key) {
+  const routines = await db.getAll('routines');
+  return db.tx(['days', 'entries'], 'readwrite', async (s) => {
+    const [existing, entries] = await Promise.all([read(s.days.get(key)), read(s.entries.index('date').getAll(key))]);
+    const have = new Set(entries.filter((e) => e.routineId).map((e) => e.routineId));
+    for (const r of routines.sort((a, b) => a.order - b.order)) {
+      if (have.has(r.id)) continue;
+      const due = routineOnDay(r, key);
+      if (!due) continue;
+      s.entries.put(newEntry({
+        date: key, kind: 'routine', title: r.title, routineId: r.id,
+        areaId: r.areaId, goalId: r.goalId, order: r.order,
+        slot: due.at ? { start: hhmm(due.at), end: null } : null,
+      }));
+    }
+    if (!existing) s.days.put(newDay(key));
+    return existing || newDay(key);
   });
-  return day;
 }
 
 // Trägt einen Wert bei einem Zahlenziel ein. Bei 'sum' ist value der Zuwachs,
@@ -425,6 +441,19 @@ export function dayStatus(store, key) {
 
 // Tage am Stück mit erfülltem Plan; Ruhetage zählen mit. Der heutige Tag zählt,
 // sobald er erfüllt ist, und bricht den Streak bis Mitternacht nicht.
+// Erster Tag, an dem wirklich etwas eingetragen wurde (Häkchen, Wasser, Foto, Session,
+// Zielwert). Tage davor zählen nirgends als „nichts gemacht“. null = noch nichts.
+export function firstActiveDay(store) {
+  const dates = [
+    ...store.entries.filter((e) => e.doneAt).map((e) => e.date),
+    ...store.days.filter((d) => d.water?.length).map((d) => d.date),
+    ...store.photos.map((p) => p.date),
+    ...store.sessions.map((s) => s.date),
+    ...store.goalValues.map((v) => v.date),
+  ];
+  return dates.length ? dates.reduce((min, d) => (d < min ? d : min)) : null;
+}
+
 export function streak(store, today) {
   const kept = (key) => { const s = dayStatus(store, key); return s.fulfilled || s.restDay; };
   const todayKept = kept(today);
@@ -652,17 +681,36 @@ export function goalTime(goal, store, today) {
 
 // ---------- Kalender ----------
 
-// Aktivität eines Tages: erledigte Einträge plus Session-Stunden, in Stufen 0–4.
-const ACTIVITY_STEPS = [0, 3, 6, 9];
-export function dayActivity(store, key) {
-  const done = store.entries.filter((e) => e.date === key && e.kind !== 'block' && e.doneAt).length;
-  const hours = store.sessions.filter((s) => s.date === key).reduce((h, s) => h + sessionDuration(s), 0) / 3_600_000;
-  const photos = store.photos.filter((p) => p.date === key && p.slot).length;
-  const water = waterTotal(store.days.find((d) => d.date === key));
-  const score = done + hours;
-  const any = score > 0 || photos > 0 || water > 0;
-  const level = !any ? 0 : ACTIVITY_STEPS.filter((t) => score > t).length || 1;
-  return { level, done, hours, photos, water };
+// Produktivität eines Tages: Arbeit (Session-Stunden in Arbeitsbereichen, gemessen am
+// Tagesziel) 50 %, Routinen 35 %, Wasser 15 %. Stufe 0 = keine Daten, 1 (rot) bis 5
+// (dunkelgrün) in 20-%-Schritten. Gold: alle Routinen, Wasser voll und Arbeitsziel erreicht.
+export const PRODUCTIVITY_WEIGHTS = { work: 0.5, routines: 0.35, water: 0.15 };
+
+export function dayProductivity(store, key) {
+  const { settings } = store;
+  const day = store.days.find((d) => d.date === key);
+  const routines = store.entries.filter((e) => e.date === key && e.kind === 'routine');
+  const routinesDone = routines.filter((e) => e.doneAt).length;
+  const sessions = store.sessions.filter((s) => s.date === key);
+  const workAreas = settings.workAreaIds || [];
+  const workHours = sessions.filter((s) => workAreas.includes(s.areaId)).reduce((h, s) => h + sessionDuration(s), 0) / 3_600_000;
+  const workGoal = settings.workGoalHours;
+  const water = waterTotal(day);
+  const goal = waterGoal(day, settings);
+  const parts = {
+    work: Math.min(1, workHours / workGoal),
+    routines: routines.length ? routinesDone / routines.length : 0,
+    water: goal ? Math.min(1, water / goal) : 0,
+  };
+  const score = Object.entries(PRODUCTIVITY_WEIGHTS).reduce((sum, [k, w]) => sum + w * parts[k], 0);
+  const gold = routines.length > 0 && routinesDone === routines.length && water >= goal && workHours >= workGoal;
+  const start = firstActiveDay(store);
+  const hasData = start != null && key >= start && (Boolean(day) || sessions.length > 0);
+  return {
+    level: !hasData ? 0 : 1 + Math.min(4, Math.floor(score * 5)),
+    score, gold, parts, workHours, workGoal, routinesDone, routinesTotal: routines.length, water, goal,
+    photos: store.photos.filter((p) => p.date === key && p.slot).length,
+  };
 }
 
 // Ziele, die sich an einem Tag bewegt haben: Zahlenwerte vorher/nachher und freigelegte Funde.

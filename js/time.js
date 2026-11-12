@@ -1,11 +1,43 @@
-// Zeit-Helfer. Die App rechnet in Gerätezeit, ein Tag beginnt um Mitternacht.
+// Zeit-Helfer. Die App rechnet in Gerätezeit. Ein App-Tag beginnt um 3 Uhr morgens:
+// Alles zwischen 0:00 und 2:59 zählt noch zum Vortag (Trading-Session nach Mitternacht usw.).
+
+export const DAY_START_H = 3;
 
 const pad = (n) => String(n).padStart(2, '0');
 
-// 'YYYY-MM-DD' in Gerätezeit.
+// Kalenderdatum 'YYYY-MM-DD' ohne Verschiebung.
+function calendarKey(d) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// App-Tag 'YYYY-MM-DD', zu dem ein Zeitpunkt gehört.
 export function dayKey(date = new Date()) {
   const d = date instanceof Date ? date : new Date(date);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return calendarKey(new Date(d.getTime() - DAY_START_H * 3_600_000));
+}
+
+// Minuten seit 0:00 des App-Tags: 1:30 nach Mitternacht ergibt 25:30 = 1530.
+export function appMinutes(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  const h = d.getHours();
+  return (h < DAY_START_H ? h + 24 : h) * 60 + d.getMinutes();
+}
+
+// 'HH:MM' eines Plans als App-Minuten; Zeiten vor 3 Uhr liegen nach Mitternacht.
+export function slotMinutes(time) {
+  const [h, m] = time.split(':').map(Number);
+  return (h < DAY_START_H ? h + 24 : h) * 60 + m;
+}
+
+export const formatMinutes = (min) => `${pad(Math.floor(min / 60) % 24)}:${pad(min % 60)}`;
+
+// Zeitpunkt der Uhrzeit 'HH:MM' am App-Tag key (vor 3 Uhr: am Kalender-Folgetag).
+export function dateAt(key, time) {
+  const [h, m] = time.split(':').map(Number);
+  const d = parseDayKey(key);
+  if (h < DAY_START_H) d.setDate(d.getDate() + 1);
+  d.setHours(h, m, 0, 0);
+  return d;
 }
 
 export function parseDayKey(key) {
@@ -16,7 +48,7 @@ export function parseDayKey(key) {
 export function addDays(key, n) {
   const d = parseDayKey(key);
   d.setDate(d.getDate() + n);
-  return dayKey(d);
+  return calendarKey(d);
 }
 
 // 0 = Sonntag … 6 = Samstag

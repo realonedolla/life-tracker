@@ -1,6 +1,7 @@
 import { html, render, useCallback, useEffect, useRef, useState } from './vendor/preact-htm.js';
 import * as db from './db.js';
 import { seedIfEmpty } from './seed.js';
+import { migrate } from './migrate.js';
 import { ensureDay, getSettings } from './model.js';
 import { dayKey, formatDate } from './time.js';
 import { Icon } from './ui.js';
@@ -174,6 +175,7 @@ async function boot() {
   try {
     await db.openDB();
     await seedIfEmpty();
+    await migrate();
     await ensureDay();
     // Bittet den Browser, die Daten nicht bei Platzmangel zu löschen.
     navigator.storage?.persist?.();

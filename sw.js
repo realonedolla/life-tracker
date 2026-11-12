@@ -1,7 +1,7 @@
 // Service Worker: hält die App-Dateien offline vor. Daten liegen in IndexedDB, nicht hier.
 // VERSION bei jeder Veröffentlichung erhöhen, damit das iPhone die neuen Dateien lädt.
 
-const VERSION = 'p7-1';
+const VERSION = 'v8-1';
 const CACHE = `lt-${VERSION}`;
 const FILES = [
   './',
@@ -18,6 +18,7 @@ const FILES = [
   './js/time.js',
   './js/model.js',
   './js/seed.js',
+  './js/migrate.js',
   './js/photos.js',
   './js/zip.js',
   './js/backup.js',

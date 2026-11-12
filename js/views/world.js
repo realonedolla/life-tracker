@@ -12,7 +12,7 @@ import {
   tunnelProgress, undoWater, waterGoal, waterTotal,
 } from '../model.js';
 import { deletePhoto, savePhoto } from '../photos.js';
-import { formatDate, hhmm } from '../time.js';
+import { appMinutes, formatDate, hhmm, slotMinutes as toMin } from '../time.js';
 import { BlobImage, Icon, Sheet, formatNumber } from '../ui.js';
 import { SessionCard, StartSheet, StopSheet, startFromEntry } from './session.js';
 import { NewGoalSheet, openGoal } from './goal.js';
@@ -23,7 +23,6 @@ import { ReminderBar } from './reminders.js';
 let savedScroll = null;
 
 const liters = (ml) => (ml / 1000).toLocaleString('de-DE', { maximumFractionDigits: 2 });
-const toMin = (s) => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
 const LONG_PRESS = 450;
 
 function useNow(ms = 30_000) {
@@ -144,7 +143,7 @@ export function World({ store, reload, notify }) {
 // ---------- Jetzt-Karte ----------
 
 function NowCard({ store, now, reload, notify, onStartFree, onStop }) {
-  const mins = now.getHours() * 60 + now.getMinutes();
+  const mins = appMinutes(now);
   const session = activeSession(store.sessions);
   const blocks = store.entries
     .filter((e) => e.date === store.today && e.slot?.start && !e.doneAt && !e.movedTo)

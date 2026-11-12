@@ -2,6 +2,7 @@
 // Sparsam: höchstens zwei gleichzeitig, jede lässt sich für heute wegklicken oder ganz abschalten.
 
 import { activeSession, dayStatus, sessionDuration, waterGoal, waterTotal } from './model.js';
+import { appMinutes, slotMinutes as toMin } from './time.js';
 
 export const REMINDERS = [
   { id: 'session', label: 'Session läuft lange', time: null, hint: 'nach der eingestellten Dauer' },
@@ -13,7 +14,6 @@ export const REMINDERS = [
   { id: 'backup', label: 'Sicherung', time: null, hint: 'wenn die letzte länger als 3 Wochen her ist' },
 ];
 
-const toMin = (s) => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
 const liters = (ml) => (ml / 1000).toLocaleString('de-DE', { maximumFractionDigits: 1 });
 const MAX_SHOWN = 2;
 
@@ -38,7 +38,7 @@ export function dismiss(today, id) {
 export function dueReminders(store, now = new Date()) {
   const s = store.settings;
   const on = (id) => s.reminders?.[id] !== false;
-  const mins = now.getHours() * 60 + now.getMinutes();
+  const mins = appMinutes(now);
   const today = store.today;
   const day = store.days.find((d) => d.date === today);
   const status = dayStatus(store, today);

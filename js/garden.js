@@ -6,7 +6,7 @@
 // Bauwerke    Stunden-Meilensteine aller Sessions und Monumente geschaffter Ziele; verfallen nie
 
 import { addDays } from './time.js';
-import { dayStatus, sessionDuration, waterGoal, waterTotal } from './model.js';
+import { dayStatus, firstActiveDay, sessionDuration, waterGoal, waterTotal } from './model.js';
 
 export const HOUR_STRUCTURES = [
   { hours: 5, key: 'bench', name: 'Bank' },
@@ -32,7 +32,8 @@ export function decayLabel(decay) {
 
 export function gardenState(store) {
   const today = store.today;
-  const first = store.days.reduce((min, d) => (d.date < min ? d.date : min), today);
+  // Erst ab dem ersten Tag mit Einträgen zählen; davor war die App nur installiert.
+  const first = firstActiveDay(store) ?? today;
   const plants = [];
   let decay = 0;
   for (let key = first; key < today; key = addDays(key, 1)) {

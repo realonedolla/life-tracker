@@ -425,48 +425,50 @@ input, select, textarea { font-size: 16px; } /* verhindert iOS-Zoom beim Fokus *
 .task-form-row .amount { width: 96px; flex: none; }
 .task-form .btn { flex: none; min-width: 44px; padding: 0; font-size: 20px; }
 
-/* Timetable */
-.tray {
-  display: flex; flex-wrap: wrap; gap: 6px; min-height: 44px; margin-bottom: 12px; padding: 6px;
-  background: var(--bg); border: 2px dashed var(--panel-2);
-}
-.tray.over { border-color: var(--gold); }
-.chip {
-  display: inline-flex; align-items: center; min-height: 34px;
-  background: var(--panel-2); border: 2px solid var(--line); border-left: 6px solid var(--c);
-}
-.chip.dragging, .tt-block.dragging { opacity: 0.35; }
-.chip-text { padding: 0 10px 0 2px; font-size: 14px; }
-.chip.ghost {
-  position: fixed; z-index: 40; padding: 6px 10px; pointer-events: none; font-size: 14px; font-weight: 600;
-  transform: translate(-30%, -120%); box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35);
-}
+/* Griff zum Umsortieren (Zwischenziele) und Chips */
 .tt-handle {
   display: inline-grid; place-items: center; flex: none; width: 30px; align-self: stretch;
   color: var(--muted); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
 }
-.tt-grid { position: relative; margin-left: 0; border-top: 2px solid var(--line); }
-.tt-hour { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--panel-2); }
-.tt-hour span { position: absolute; left: 0; top: 2px; font-size: 12px; color: var(--muted); }
-.tt-now { position: absolute; left: 36px; right: 0; height: 2px; background: var(--danger); z-index: 3; }
-.tt-now::before { content: ''; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; background: var(--danger); }
-.tt-drop { position: absolute; left: 36px; right: 0; height: 0; border-top: 2px dashed var(--gold); z-index: 4; }
-.tt-drop span { position: absolute; right: 0; top: -22px; padding: 1px 4px; font-size: 12px; background: var(--gold); color: #2a1a08; }
-.tt-block {
-  --gutter: 40px;
-  position: absolute; z-index: 2; display: flex; overflow: hidden;
-  left: calc(var(--gutter) + (100% - var(--gutter)) * var(--col) / var(--cols));
-  width: calc((100% - var(--gutter)) / var(--cols) - 3px);
+.chip {
+  display: inline-flex; align-items: center; min-height: 34px;
   background: var(--panel-2); border: 2px solid var(--line); border-left: 6px solid var(--c);
 }
-.tt-block.kind-block { background: color-mix(in srgb, var(--c) 35%, var(--panel)); }
-.tt-block.done { opacity: 0.55; }
-.tt-block .tt-handle { width: 24px; }
-.tt-body { flex: 1; min-width: 0; padding: 3px 4px 3px 0; display: flex; flex-direction: column; justify-content: flex-start; }
-.tt-title { font-size: 13px; font-weight: 600; line-height: 1.2; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.tt-time { font-size: 11px; color: var(--muted); }
-.tt-more { flex: none; width: 28px; color: var(--muted); font-size: 18px; text-align: center; }
-.tt-hint { margin: 10px 0 0; }
+
+/* Timetable als Tagesliste */
+.agenda { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.agenda-row {
+  display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 6px 6px 6px 8px;
+  background: var(--panel-2); border: 2px solid var(--line); border-left: 6px solid var(--c);
+}
+.agenda-row.done { opacity: 0.6; }
+.agenda-row.session { background: color-mix(in srgb, var(--grass-dark) 22%, var(--panel)); }
+.agenda-time { flex: none; width: 44px; font-size: 14px; color: var(--muted); }
+.agenda-mark { flex: none; width: 16px; text-align: center; font-weight: 700; }
+.agenda-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; min-height: 40px; justify-content: center; }
+.agenda-title { font-weight: 600; line-height: 1.25; }
+.agenda-sub { font-size: 13px; color: var(--muted); }
+.agenda-play {
+  flex: none; width: 40px; height: 40px; padding: 0; font-size: 16px;
+  color: #2a1a08; background: var(--gold); border: 2px solid var(--line);
+}
+.agenda-gap {
+  display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 40px;
+  padding: 4px 6px 4px 12px; font-size: 14px; color: var(--muted); border: 2px dashed var(--panel-2);
+}
+.agenda-plus { display: grid; place-items: center; width: 28px; height: 28px; font-weight: 700; color: #2a1a08; background: var(--gold); }
+.agenda-now { display: flex; align-items: center; gap: 8px; color: var(--danger); font-size: 12px; font-weight: 700; }
+.agenda-now::after { content: ''; flex: 1; height: 2px; background: var(--danger); }
+.agenda-unscheduled { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.plain-chip { padding: 0 10px; color: var(--text); font-size: 14px; }
+.lengths { margin-top: 10px; }
+.slot-mode { margin: 14px 0 10px; }
+.slot-list { display: grid; gap: 6px; }
+.slot-pick {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px;
+  text-align: left; color: var(--text); font-weight: 600; background: var(--bg); border: 2px solid var(--line); border-left: 6px solid var(--c);
+}
+.slot-backfill { margin-top: 14px; color: var(--muted); }
 
 /* Session */
 .session-card { margin-bottom: 16px; padding: 12px 14px; background: var(--panel); border: var(--px) solid var(--gold-dark); }
@@ -593,14 +595,32 @@ input, select, textarea { font-size: 16px; } /* verhindert iOS-Zoom beim Fokus *
 .cal-day.today { outline: 2px solid var(--gold); outline-offset: -2px; }
 .cal-kept { position: absolute; right: 2px; bottom: 1px; color: var(--gold); line-height: 0; }
 .cal-photo { position: absolute; left: 4px; bottom: 4px; width: 6px; height: 6px; background: var(--text); opacity: 0.8; }
-/* Eine Farbe, von wenig zu viel Aktivität kräftiger werdend. */
+/* Produktivität: rot (wenig) über orange, gelb, hellgrün bis dunkelgrün (viel); Gold glänzt. */
 .lvl-0 { background: var(--bg); }
-.lvl-1 { background: #213a29; }
-.lvl-2 { background: #2c5e36; }
-.lvl-3 { background: #3d8b45; }
-.lvl-4 { background: #63c74d; color: #0a1a08; }
-.lvl-4 .cal-photo { background: #0a1a08; }
-.lvl-4 .cal-kept { color: #5a3a00; }
+.lvl-1 { background: #b3392f; color: #fff4ee; }
+.lvl-2 { background: #d9772b; color: #2a1404; }
+.lvl-3 { background: #e3c13c; color: #2a2204; }
+.lvl-4 { background: #8fcf5a; color: #0f2a06; }
+.lvl-5 { background: #2f8a3c; color: #eaffe4; }
+.lvl-gold {
+  position: relative; overflow: hidden; color: #3a2400;
+  background: linear-gradient(135deg, #b8860b 0%, #f4c430 30%, #fff1a8 50%, #f4c430 70%, #b8860b 100%);
+  box-shadow: 0 0 10px rgba(244, 196, 48, 0.55);
+}
+.lvl-gold::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: -60%; width: 40%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.75), transparent);
+  animation: shine 2.6s ease-in-out infinite;
+}
+@keyframes shine { 0% { left: -60%; } 60%, 100% { left: 130%; } }
+@media (prefers-reduced-motion: reduce) { .lvl-gold::after { animation: none; display: none; } }
+.lvl-1 .cal-photo, .lvl-5 .cal-photo { background: currentColor; }
+.lvl-2 .cal-photo, .lvl-3 .cal-photo, .lvl-4 .cal-photo, .lvl-gold .cal-photo { background: currentColor; }
+.cal-day[class*='lvl-'] .cal-kept { color: inherit; }
+.cal-day .cal-kept, .cal-day .cal-photo { z-index: 1; }
+.prod { display: grid; gap: 2px; margin: 4px 0 8px; padding: 10px 12px; border: 2px solid var(--line); }
+.prod-score { font-weight: 700; }
+.prod-parts { opacity: 0.9; }
 .cal-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 10px; }
 .cal-swatch { width: 14px; height: 14px; border: 2px solid var(--line); }
 .cal-legend-kept { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--gold); }
