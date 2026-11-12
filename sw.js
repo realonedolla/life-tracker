@@ -1,7 +1,7 @@
 // Service Worker: hält die App-Dateien offline vor. Daten liegen in IndexedDB, nicht hier.
 // VERSION bei jeder Veröffentlichung erhöhen, damit das iPhone die neuen Dateien lädt.
 
-const VERSION = 'v9-3';
+const VERSION = 'v9-4';
 const CACHE = `lt-${VERSION}`;
 const FILES = [
   './',

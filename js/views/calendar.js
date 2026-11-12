@@ -67,9 +67,14 @@ function MonthGrid({ store, days, onPick }) {
           <button key=${key} class="cal-day lvl-${a.gold ? 'gold' : a.level} ${key === store.today ? 'today' : ''}" disabled=${future}
             onClick=${() => onPick(key)}
             aria-label="${formatDate(key, { weekday: 'long', day: 'numeric', month: 'long' })}${a.level ? `, ${a.gold ? 'Gold-Tag' : `${Math.round(a.score * 100)} % produktiv`}` : ''}${kept ? ', Plan erfüllt' : ''}">
-            <span class="num">${Number(key.slice(8))}</span>
-            ${kept && html`<span class="cal-kept"><${Icon} name="flamme" scale=${2} /></span>`}
-            ${a.photos > 0 && html`<span class="cal-photo" aria-hidden="true"></span>`}
+            <span class="cal-top">
+              <span class="num">${Number(key.slice(8))}</span>
+              ${kept && html`<span class="cal-kept"><${Icon} name="flamme" scale=${1} /></span>`}
+            </span>
+            <span class="cal-bottom" aria-hidden="true">
+              ${a.level > 0 && html`<span class="cal-pct num">${Math.round(a.score * 100)}%</span>`}
+              ${a.photos > 0 && html`<span class="cal-photo"></span>`}
+            </span>
           </button>`;
       })}
     </div>

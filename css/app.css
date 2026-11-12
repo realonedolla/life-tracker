@@ -587,21 +587,21 @@ input, select, textarea { font-size: 16px; } /* verhindert iOS-Zoom beim Fokus *
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .cal-wd { text-align: center; padding-bottom: 2px; }
 .cal-day {
-  position: relative; aspect-ratio: 1; display: flex; align-items: flex-start; justify-content: flex-start;
-  padding: 3px 4px; font-size: 13px; font-weight: 600; color: var(--text);
+  position: relative; aspect-ratio: 1; display: flex; flex-direction: column; align-items: stretch; justify-content: space-between;
+  padding: 3px 3px 3px 4px; font-size: 13px; font-weight: 600; color: var(--text);
   border: 2px solid var(--line);
 }
 .cal-day:disabled { opacity: 0.3; }
 .cal-day.today { outline: 2px solid var(--gold); outline-offset: -2px; }
-.cal-kept { position: absolute; right: 2px; bottom: 1px; color: var(--gold); line-height: 0; }
-.cal-photo { position: absolute; left: 4px; bottom: 4px; width: 6px; height: 6px; background: var(--text); opacity: 0.8; }
+.cal-kept { color: var(--gold); line-height: 0; }
+.cal-photo { flex: none; width: 5px; height: 5px; background: currentColor; opacity: 0.8; }
 /* Produktivität: rot (wenig) über orange, gelb, hellgrün bis dunkelgrün (viel); Gold glänzt. */
 .lvl-0 { background: var(--bg); }
-.lvl-1 { background: #b3392f; color: #fff4ee; }
-.lvl-2 { background: #d9772b; color: #2a1404; }
-.lvl-3 { background: #e3c13c; color: #2a2204; }
-.lvl-4 { background: #8fcf5a; color: #0f2a06; }
-.lvl-5 { background: #2f8a3c; color: #eaffe4; }
+.lvl-1 { background: #b71c1c; color: #ffebee; }
+.lvl-2 { background: #ef6c00; color: #2a1200; }
+.lvl-3 { background: #fde68a; color: #3a2e00; }
+.lvl-4 { background: #43a047; color: #f1fff0; }
+.lvl-5 { background: #14532d; color: #dcfce7; }
 .lvl-gold {
   position: relative; overflow: hidden; color: #3a2400;
   background: linear-gradient(135deg, #b8860b 0%, #f4c430 30%, #fff1a8 50%, #f4c430 70%, #b8860b 100%);
@@ -614,10 +614,9 @@ input, select, textarea { font-size: 16px; } /* verhindert iOS-Zoom beim Fokus *
 }
 @keyframes shine { 0% { left: -60%; } 60%, 100% { left: 130%; } }
 @media (prefers-reduced-motion: reduce) { .lvl-gold::after { animation: none; display: none; } }
-.lvl-1 .cal-photo, .lvl-5 .cal-photo { background: currentColor; }
-.lvl-2 .cal-photo, .lvl-3 .cal-photo, .lvl-4 .cal-photo, .lvl-gold .cal-photo { background: currentColor; }
 .cal-day[class*='lvl-'] .cal-kept { color: inherit; }
-.cal-day .cal-kept, .cal-day .cal-photo { z-index: 1; }
+.cal-day .cal-top, .cal-day .cal-bottom { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 2px; }
+.cal-pct { font-size: 10px; font-weight: 600; line-height: 1; opacity: 0.9; }
 .prod { display: grid; gap: 2px; margin: 4px 0 8px; padding: 10px 12px; border: 2px solid var(--line); }
 .prod-score { font-weight: 700; }
 .prod-parts { opacity: 0.9; }
