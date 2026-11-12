@@ -171,7 +171,12 @@ function registerServiceWorker() {
   const local = ['localhost', '127.0.0.1'].includes(location.hostname);
   if (local && !new URLSearchParams(location.search).has('sw')) return;
   const hadController = Boolean(navigator.serviceWorker.controller);
-  navigator.serviceWorker.register('./sw.js');
+  // sw.js nie aus dem HTTP-Cache: neue Versionen kommen beim nächsten Öffnen sofort an.
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reg.update().catch(() => {});
+    });
+  });
   // Neue Version aktiv → einmal neu laden, damit alle Dateien zusammenpassen.
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (hadController) location.reload();

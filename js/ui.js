@@ -128,9 +128,12 @@ export function Sheet(props) {
   if (!host.current) host.current = document.createElement('div');
   useLayoutEffect(() => {
     document.body.append(host.current);
+    // Solange ein Fenster offen ist, wird die untere Leiste ausgeblendet (siehe CSS).
+    document.body.classList.add('sheet-open');
     return () => {
       render(null, host.current);
       host.current.remove();
+      if (!document.querySelector('.sheet-backdrop')) document.body.classList.remove('sheet-open');
     };
   }, []);
   useLayoutEffect(() => {

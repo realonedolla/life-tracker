@@ -290,7 +290,9 @@ function TimeInfo({ store }) {
 function StorageInfo({ store }) {
   const [estimate, setEstimate] = useState(null);
   const [persisted, setPersisted] = useState(null);
+  const [version, setVersion] = useState(null);
   useEffect(() => {
+    caches?.keys?.().then((keys) => setVersion(keys.find((k) => k.startsWith('lt-'))?.slice(3) || 'lokal'));
     navigator.storage?.estimate?.().then(setEstimate);
     navigator.storage?.persisted?.().then(setPersisted);
   }, [store]);
@@ -300,6 +302,7 @@ function StorageInfo({ store }) {
       <h2 class="label">Speicher</h2>
       <dl class="kv">
         ${Object.entries(STORE_LABELS).map(([name, label]) => html`<dt key=${name}>${label}</dt><dd>${store[name].length}</dd>`)}
+        ${version && html`<dt>App-Version</dt><dd>${version}</dd>`}
         ${estimate && html`<dt>Belegt</dt><dd>${formatBytes(estimate.usage)}</dd>`}
         ${persisted != null && html`<dt>Dauerhaft geschützt</dt><dd>${persisted ? 'ja' : 'nein'}</dd>`}
       </dl>
