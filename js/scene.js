@@ -60,6 +60,9 @@ export const LAYERS = {
   dirt:  { base: '#8a5a32', dark: '#6b4226', light: '#a0703f', speck: '#5a3518', tunnel: '#2a1d16', edge: '#4a3020' },
   stone: { base: '#6f7480', dark: '#5a5f6b', light: '#8a8f9a', speck: '#3f434d', tunnel: '#1d1f26', edge: '#3a3d47' },
   deep:  { base: '#4a2a6e', dark: '#3c2159', light: '#5e3888', speck: '#8a5cc4', tunnel: '#150d20', edge: '#2a1a3e' },
+  sand:  { base: '#b8925a', dark: '#9c7a48', light: '#d0ad72', speck: '#7a5a30', tunnel: '#3a2a16', edge: '#5a4224' },
+  ice:   { base: '#5a8aa8', dark: '#4a7590', light: '#8ab8d4', speck: '#d8f0ff', tunnel: '#14222c', edge: '#2a4458' },
+  lava:  { base: '#5a2a24', dark: '#46201c', light: '#7a3a2c', speck: '#f08a2a', tunnel: '#1a0c0a', edge: '#3a1612' },
   bedrock: { base: '#221c2c', dark: '#1a1522', light: '#2e2638', speck: '#120e18', tunnel: '#000', edge: '#000' },
 };
 

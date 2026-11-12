@@ -18,7 +18,7 @@ export const HOUR_STRUCTURES = [
 ];
 
 // Monument je nach Schicht des Bereichs.
-const MONUMENT_BY_LAYER = { dirt: 'statue', stone: 'flagTower', deep: 'crystalPillar' };
+const MONUMENT_BY_LAYER = { dirt: 'statue', sand: 'statue', stone: 'flagTower', lava: 'flagTower', deep: 'crystalPillar', ice: 'crystalPillar' };
 
 const HEAL_PER_DAY = 2;
 const MAX_DECAY = 7;

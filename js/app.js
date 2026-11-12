@@ -1,6 +1,6 @@
 import { html, render, useCallback, useEffect, useRef, useState } from './vendor/preact-htm.js';
 import * as db from './db.js';
-import { seedIfEmpty } from './seed.js';
+import { isSeeded, seedEmpty, seedIfEmpty } from './seed.js';
 import { migrate } from './migrate.js';
 import { ensureDay, getSettings } from './model.js';
 import { dayKey, formatDate } from './time.js';
@@ -12,6 +12,7 @@ import { GoalView } from './views/goal.js';
 import { CalendarView } from './views/calendar.js';
 import { IdeasView } from './views/ideas.js';
 import { dueReminders } from './reminders.js';
+import { pushStats } from './sync.js';
 
 const TABS = [
   ['welt', 'Welt'],
@@ -101,6 +102,13 @@ function App() {
     return () => clearInterval(t);
   }, [store, notify]);
 
+  // Geteilte Tageswerte aktuell halten: nach Änderungen gebündelt hochladen.
+  useEffect(() => {
+    if (!store) return undefined;
+    const t = setTimeout(() => pushStats(store).catch(() => {}), 4000);
+    return () => clearTimeout(t);
+  }, [store]);
+
   if (!store) return null;
 
   if (route.startsWith('ziel/')) {
@@ -170,11 +178,33 @@ function registerServiceWorker() {
   });
 }
 
+// Erster Start: mit Beispiel-Zielen oder leer. Wartet auf die Wahl.
+function chooseStart(root) {
+  return new Promise((resolve) => {
+    const pick = async (template) => {
+      render(html`<div class="shell"><p class="muted center">Einen Moment …</p></div>`, root);
+      await (template ? seedIfEmpty() : seedEmpty());
+      resolve();
+    };
+    render(html`
+      <div class="shell first-run">
+        <section class="panel">
+          <h2 class="label">Willkommen</h2>
+          <p>Deine Daten bleiben nur auf diesem Gerät. Womit möchtest du starten?</p>
+          <button class="btn wide" onClick=${() => pick(false)}>Leer starten</button>
+          <p class="muted small">Du legst deine Bereiche, Ziele und Routinen selbst an (unter dem Zahnrad und in der Welt).</p>
+          <button class="btn secondary wide" onClick=${() => pick(true)}>Mit Beispiel-Zielen starten</button>
+          <p class="muted small">Sport, Trading und Ecom mit fertigen Zielen und Routinen. Alles lässt sich später ändern oder löschen.</p>
+        </section>
+      </div>`, root);
+  });
+}
+
 async function boot() {
   const root = document.getElementById('app');
   try {
     await db.openDB();
-    await seedIfEmpty();
+    if (!(await isSeeded())) await chooseStart(root);
     await migrate();
     await ensureDay();
     // Bittet den Browser, die Daten nicht bei Platzmangel zu löschen.

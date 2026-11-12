@@ -7,6 +7,7 @@ import {
 import { addDays, formatDate, hhmm, parseDayKey } from '../time.js';
 import { BlobImage, Icon, Sheet, formatNumber } from '../ui.js';
 import { targetLabel } from './session.js';
+import { FriendsBoard } from './friends.js';
 
 const pad = (n) => String(n).padStart(2, '0');
 const liters = (ml) => (ml / 1000).toLocaleString('de-DE', { maximumFractionDigits: 2 });
@@ -47,6 +48,7 @@ export function CalendarView({ store }) {
         ? html`<${MonthGrid} store=${store} days=${days} onPick=${setDay} />`
         : html`<${PhotoRows} store=${store} days=${days} onPick=${setDay} />`}
     </section>
+    <${FriendsBoard} store=${store} />
     <${MonthSummary} store=${store} days=${days} />
     ${day && html`<${DaySheet} store=${store} date=${day} onClose=${() => setDay(null)} onMove=${(n) => setDay(addDays(day, n))} />`}`;
 }

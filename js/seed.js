@@ -46,6 +46,17 @@ const ROUTINES = [
   ['Live traden', 'NY-Open', '', 'fixed', 'Trading', null],
 ];
 
+export const isSeeded = async () => Boolean(await db.getMeta('seededAt'));
+
+// Leerer Start: keine Bereiche, Ziele oder Routinen, nur Standard-Einstellungen.
+export async function seedEmpty() {
+  await db.tx('meta', 'readwrite', (s) => {
+    s.meta.put({ key: 'settings', value: { ...DEFAULT_SETTINGS, workAreaIds: [] } });
+    s.meta.put({ key: 'seededAt', value: Date.now() });
+  });
+}
+
+// Start mit Beispiel-Zielen (Onedollas Bereiche, Ziele und Routinen).
 export async function seedIfEmpty() {
   if (await db.getMeta('seededAt')) return false;
 

@@ -2,13 +2,15 @@
 
 import { html, useEffect, useState } from '../vendor/preact-htm.js';
 import {
-  COUNT_MODES, GOAL_KINDS, WINDOWS, addGoalValue, goalValue, routineOnDay, saveSettings,
+  COUNT_MODES, GOAL_KINDS, addGoalValue, goalValue, saveSettings,
 } from '../model.js';
 import { sunTimes } from '../sun.js';
 import { REMINDERS } from '../reminders.js';
 import { addDays, deviceTimeZone, formatDate, hhmm, zonedTimeOnLocalDay } from '../time.js';
 import { applyBackup, exportBackup, readBackup } from '../backup.js';
 import { formatBytes, formatNumber } from '../ui.js';
+import { AreasEditor, RoutinesEditor, WorkSettings } from './setup.js';
+import { FriendsSetup } from './friends.js';
 
 const STORE_LABELS = {
   areas: 'Bereiche',
@@ -29,10 +31,13 @@ const DAY_MS = 86_400_000;
 export function DataView({ store, reload, notify }) {
   return html`
     <${Backup} store=${store} reload=${reload} notify=${notify} />
+    <${FriendsSetup} store=${store} notify=${notify} />
+    <${AreasEditor} store=${store} reload=${reload} notify=${notify} />
+    <${RoutinesEditor} store=${store} reload=${reload} notify=${notify} />
+    <${WorkSettings} store=${store} reload=${reload} notify=${notify} />
     <${Settings} store=${store} reload=${reload} notify=${notify} />
     <${ReminderSettings} store=${store} reload=${reload} notify=${notify} />
     <${Goals} store=${store} reload=${reload} notify=${notify} />
-    <${Routines} store=${store} />
     <${TimeInfo} store=${store} />
     <${StorageInfo} store=${store} />`;
 }
@@ -251,37 +256,6 @@ function GoalRow({ goal, pinned, store, reload, notify }) {
     </li>`;
 }
 
-// ---------- Routinen und heutige Einträge ----------
-
-function Routines({ store }) {
-  const routines = [...store.routines].sort((a, b) => a.order - b.order);
-  const goalName = (id) => store.goals.find((g) => g.id === id)?.title;
-  const areaName = (id) => store.areas.find((a) => a.id === id)?.name;
-  const todays = store.entries.filter((e) => e.date === store.today && e.kind === 'routine');
-
-  return html`
-    <section class="panel">
-      <h2 class="label">Routinen</h2>
-      <ul class="list">
-        ${routines.map((r) => {
-          const due = routineOnDay(r, store.today);
-          const when = r.fixed
-            ? due ? `heute ${hhmm(due.at)} Uhr (NY-Open)` : 'heute kein Börsentag'
-            : WINDOWS[r.window];
-          const target = goalName(r.goalId) ? `${areaName(r.areaId)}: ${goalName(r.goalId)}` : areaName(r.areaId) || 'den Garten';
-          return html`
-            <li key=${r.id}>
-              <div class="goal-title"><span>${r.title}</span><span class="muted small">${when}</span></div>
-              <div class="muted small">Mindestens: ${r.minVersion}${r.bonus ? ` · Bonus: ${r.bonus}` : ''} · zahlt ein auf ${target}</div>
-            </li>`;
-        })}
-      </ul>
-      <p class="muted small" style="margin-top:12px">
-        Heute automatisch im Tagesplan: ${todays.length} von ${routines.length} Routinen.
-      </p>
-    </section>`;
-}
-
 // ---------- Zeit ----------
 
 // Sucht ab heute den nächsten Tag, an dem die NY-Open lokal zu einer anderen Uhrzeit liegt.
@@ -296,15 +270,16 @@ function nextShift(today, time, timeZone) {
 }
 
 function TimeInfo({ store }) {
-  const open = zonedTimeOnLocalDay(store.today, '09:30', 'America/New_York');
-  const shift = nextShift(store.today, '09:30', 'America/New_York');
+  const r = store.routines.find((x) => x.active && x.fixed?.timeZone);
+  const open = r && zonedTimeOnLocalDay(store.today, r.fixed.time, r.fixed.timeZone);
+  const shift = r && nextShift(store.today, r.fixed.time, r.fixed.timeZone);
   return html`
     <section class="panel">
       <h2 class="label">Zeit</h2>
       <dl class="kv">
         <dt>Zeitzone (Gerät)</dt><dd>${deviceTimeZone()}</dd>
         <dt>Heute</dt><dd>${formatDate(store.today, { weekday: 'long', day: 'numeric', month: 'long' })}</dd>
-        <dt>NY-Open 09:30 New York</dt><dd>${open ? `${hhmm(open)} Uhr` : '–'}</dd>
+        ${r && html`<dt>${r.title}: ${r.fixed.time} ${r.fixed.timeZone.split('/').pop().replace('_', ' ')}</dt><dd>${open ? `${hhmm(open)} Uhr` : '–'}</dd>`}
         ${shift && html`<dt>Ab ${formatDate(shift.key, { day: 'numeric', month: 'long', year: 'numeric' })}</dt><dd>${shift.local} Uhr</dd>`}
       </dl>
     </section>`;

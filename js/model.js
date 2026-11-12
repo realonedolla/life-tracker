@@ -13,7 +13,7 @@
 // Idee (ideas)           → Eingangskorb
 
 import * as db from './db.js';
-import { addDays, dayKey, hhmm, parseDayKey, weekday, zonedTimeOnLocalDay, weekdayInZone } from './time.js';
+import { addDays, dateAt, dayKey, hhmm, parseDayKey, weekday, zonedTimeOnLocalDay, weekdayInZone } from './time.js';
 
 export const PHOTO_SLOTS = [
   { key: 'selfie', label: 'Selfie' },
@@ -128,6 +128,11 @@ export const sessionState = (s) =>
 // Ob eine Routine an einem lokalen Tag fällig ist, und wann (bei fester Zeit).
 export function routineOnDay(routine, key) {
   if (!routine.active) return null;
+  // Feste Uhrzeit in Gerätezeit (ohne Zeitzone): einfach diese Uhrzeit am App-Tag.
+  if (routine.fixed && !routine.fixed.timeZone) {
+    if (routine.weekdays && !routine.weekdays.includes(weekday(key))) return null;
+    return { at: dateAt(key, routine.fixed.time) };
+  }
   if (routine.fixed) {
     const at = zonedTimeOnLocalDay(key, routine.fixed.time, routine.fixed.timeZone);
     if (!at) return null;
@@ -745,3 +750,77 @@ export async function updateIdea(id, patch) {
 }
 
 export const deleteIdea = (id) => db.del('ideas', id);
+
+// ---------- Bereiche und Routinen einrichten ----------
+
+export async function addArea({ name, layer = 'stone', color }) {
+  const areas = await db.getAll('areas');
+  const area = newArea({ name: name.trim(), layer, color, order: areas.length });
+  await db.put('areas', area);
+  return area;
+}
+
+export async function updateArea(id, patch) {
+  const area = await db.get('areas', id);
+  if (area) await db.put('areas', { ...area, ...patch });
+}
+
+// Verschiebt einen Bereich eine Schicht nach oben (-1) oder unten (+1).
+export async function moveArea(id, dir) {
+  const areas = (await db.getAll('areas')).sort((a, b) => a.order - b.order);
+  const i = areas.findIndex((a) => a.id === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= areas.length) return;
+  [areas[i], areas[j]] = [areas[j], areas[i]];
+  await db.tx('areas', 'readwrite', (s) => areas.forEach((a, k) => s.areas.put({ ...a, order: k })));
+}
+
+// Löscht einen Bereich samt seinen Zielen. Sessions bleiben als Stunden ohne Bereich,
+// Routinen und Einträge verlieren nur die Verknüpfung.
+export async function deleteArea(id) {
+  for (const goal of await db.getAllBy('goals', 'areaId', id)) await deleteGoal(goal);
+  await db.tx(['areas', 'routines', 'entries', 'sessions', 'meta'], 'readwrite', async (s) => {
+    const all = (name) => new Promise((res) => { const r = s[name].getAll(); r.onsuccess = () => res(r.result); });
+    for (const x of await all('routines')) if (x.areaId === id) s.routines.put({ ...x, areaId: null });
+    for (const x of await all('entries')) if (x.areaId === id) s.entries.put({ ...x, areaId: null });
+    for (const x of await all('sessions')) if (x.areaId === id) s.sessions.put({ ...x, areaId: null });
+    const settings = await new Promise((res) => { const r = s.meta.get('settings'); r.onsuccess = () => res(r.result); });
+    if (settings?.value?.workAreaIds?.includes(id)) {
+      s.meta.put({ key: 'settings', value: { ...settings.value, workAreaIds: settings.value.workAreaIds.filter((x) => x !== id) } });
+    }
+    s.areas.delete(id);
+  });
+}
+
+// Speichert eine Routine (neu oder geändert) und passt den heutigen, noch offenen Eintrag an.
+export async function saveRoutine(routine) {
+  const routines = await db.getAll('routines');
+  const r = routine.id && routines.some((x) => x.id === routine.id)
+    ? routine
+    : newRoutine({ ...routine, order: routines.length });
+  await db.put('routines', r);
+  const key = dayKey();
+  const entry = (await db.getAllBy('entries', 'date', key)).find((e) => e.routineId === r.id);
+  const due = routineOnDay(r, key);
+  if (entry && !entry.doneAt) {
+    if (!due) await db.del('entries', entry.id);
+    else {
+      await db.put('entries', {
+        ...entry, title: r.title, areaId: r.areaId, goalId: r.goalId,
+        slot: due.at ? { start: hhmm(due.at), end: null } : entry.slot?.start && !r.fixed ? entry.slot : null,
+      });
+    }
+  }
+  await ensureDay(key);
+  return r;
+}
+
+// Löscht eine Routine. Vergangene Einträge bleiben für Kalender und Statistik.
+export async function deleteRoutine(id) {
+  const key = dayKey();
+  const entry = (await db.getAllBy('entries', 'date', key)).find((e) => e.routineId === id && !e.doneAt);
+  await db.tx(['routines', 'entries'], 'readwrite', (s) => {
+    s.routines.delete(id);
+    if (entry) s.entries.delete(entry.id);
+  });
+}

@@ -121,6 +121,11 @@ export function World({ store, reload, notify }) {
         onStructure=${(st) => setSheet({ type: 'structure', st })}
         onGarden=${() => setSheet({ type: 'garden' })} />
 
+      ${areas.length === 0 && html`
+        <section class="empty-world">
+          <p>Noch keine Bereiche. Unter dem Zahnrad oben rechts legst du deine Bereiche und Routinen an; danach erscheinen hier die Schichten für deine Ziele.</p>
+          <a class="btn" href="#/daten">Einrichten</a>
+        </section>`}
       ${areas.map((area, i) => html`
         <${Layer} key=${area.id} area=${area} index=${i} prevLayer=${i ? areas[i - 1].layer : 'dirt'}
           store=${store} digger=${digger} onGoal=${onGoal}

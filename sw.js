@@ -1,7 +1,7 @@
 // Service Worker: hält die App-Dateien offline vor. Daten liegen in IndexedDB, nicht hier.
 // VERSION bei jeder Veröffentlichung erhöhen, damit das iPhone die neuen Dateien lädt.
 
-const VERSION = 'v8-1';
+const VERSION = 'v9-1';
 const CACHE = `lt-${VERSION}`;
 const FILES = [
   './',
@@ -19,6 +19,8 @@ const FILES = [
   './js/model.js',
   './js/seed.js',
   './js/migrate.js',
+  './js/config.js',
+  './js/sync.js',
   './js/photos.js',
   './js/zip.js',
   './js/backup.js',
@@ -36,6 +38,8 @@ const FILES = [
   './js/garden.js',
   './js/reminders.js',
   './js/views/reminders.js',
+  './js/views/setup.js',
+  './js/views/friends.js',
 ];
 
 self.addEventListener('install', (event) => {
