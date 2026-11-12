@@ -1,7 +1,7 @@
 // Service Worker: hält die App-Dateien offline vor. Daten liegen in IndexedDB, nicht hier.
 // VERSION bei jeder Veröffentlichung erhöhen, damit das iPhone die neuen Dateien lädt.
 
-const VERSION = 'v9-4';
+const VERSION = 'v9-5';
 const CACHE = `lt-${VERSION}`;
 const FILES = [
   './',
@@ -42,8 +42,14 @@ const FILES = [
   './js/views/friends.js',
 ];
 
+// Beim Installieren alle Dateien am HTTP-Cache vorbei laden (cache: 'reload'),
+// sonst landen bei schnell aufeinanderfolgenden Versionen alte Dateien im neuen Cache.
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches.open(CACHE)
+      .then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: 'reload' }))))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener('activate', (event) => {

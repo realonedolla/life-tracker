@@ -287,6 +287,16 @@ function TimeInfo({ store }) {
 
 // ---------- Speicher ----------
 
+// Service Worker abmelden und App-Cache leeren; IndexedDB (deine Daten) bleibt.
+async function reloadApp() {
+  try {
+    for (const reg of (await navigator.serviceWorker?.getRegistrations?.()) || []) await reg.unregister();
+    for (const key of (await caches?.keys?.()) || []) await caches.delete(key);
+  } finally {
+    location.reload();
+  }
+}
+
 function StorageInfo({ store }) {
   const [estimate, setEstimate] = useState(null);
   const [persisted, setPersisted] = useState(null);
@@ -306,5 +316,7 @@ function StorageInfo({ store }) {
         ${estimate && html`<dt>Belegt</dt><dd>${formatBytes(estimate.usage)}</dd>`}
         ${persisted != null && html`<dt>Dauerhaft geschützt</dt><dd>${persisted ? 'ja' : 'nein'}</dd>`}
       </dl>
+      <p class="muted small">Falls ein Update nicht ankommt: lädt alle App-Dateien frisch. Deine Daten bleiben unverändert.</p>
+      <button class="btn secondary" onClick=${reloadApp}>App neu laden</button>
     </section>`;
 }
