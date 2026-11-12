@@ -1,6 +1,6 @@
 // Gemeinsame Bausteine der Oberfläche.
 
-import { html, useEffect, useState } from './vendor/preact-htm.js';
+import { html, render, useEffect, useLayoutEffect, useRef, useState } from './vendor/preact-htm.js';
 
 // Pixel-Icons als Zeichenkarten: x = volle Farbe, o = halbtransparent.
 // Gefärbt wird über currentColor, damit aktive Tabs einfach die Textfarbe wechseln.
@@ -106,8 +106,9 @@ export function formatBytes(n) {
 
 export const formatNumber = (n) => Number(n).toLocaleString('de-DE');
 
-// Bottom-Sheet über allem; Tipp daneben oder Escape schließt.
-export function Sheet({ title, onClose, children }) {
+// Bottom-Sheet über allem; Tipp daneben oder Escape schließt. Wird direkt in <body>
+// gezeichnet, damit kein umgebender Kasten (clip-path der Panels) es abschneidet.
+function SheetBody({ title, onClose, children }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     addEventListener('keydown', onKey);
@@ -120,4 +121,20 @@ export function Sheet({ title, onClose, children }) {
         ${children}
       </div>
     </div>`;
+}
+
+export function Sheet(props) {
+  const host = useRef(null);
+  if (!host.current) host.current = document.createElement('div');
+  useLayoutEffect(() => {
+    document.body.append(host.current);
+    return () => {
+      render(null, host.current);
+      host.current.remove();
+    };
+  }, []);
+  useLayoutEffect(() => {
+    render(html`<${SheetBody} ...${props} />`, host.current);
+  });
+  return null;
 }
