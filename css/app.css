@@ -776,7 +776,8 @@ body.sheet-open { overflow: hidden; }
 .item-slot { font-size: 11px; color: var(--muted); }
 .item-bar { width: 100%; height: 5px; margin-top: 3px; background: #2e2745; }
 .item-bar span { display: block; height: 100%; background: var(--rar); }
-.item-next { font-size: 10px; color: var(--muted); line-height: 1.25; }
+.item-next { font-size: 11px; color: var(--muted); line-height: 1.3; }
+.item-goal { color: var(--text); font-weight: 600; }
 .item-next.max { color: var(--gold); }
 
 /* Abzeichen als Medaillen */

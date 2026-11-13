@@ -59,6 +59,21 @@ function ItemIcon({ slot, tier, locked }) {
   return html`<canvas class="item-icon" ref=${ref} width="12" height="12" aria-hidden="true"></canvas>`;
 }
 
+// Was bis zur nächsten Stufe fehlt, in Worten.
+const plural = (n, one, many) => `${formatNumber(n)} ${n === 1 ? one : many}`;
+function missingText(slot, g) {
+  const n = Math.max(0, Math.ceil(g.next.at - g.value));
+  switch (slot) {
+    case 'pick': return `noch ${hours(Math.max(0, g.next.at - g.value))} Arbeit in Sessions`;
+    case 'helmet':
+    case 'pet': return `${g.next.at} Tage am Stück den Plan erfüllen (Rekord: ${formatNumber(g.value)})`;
+    case 'lamp': return `noch ${plural(n, 'Gold-Tag', 'Gold-Tage')}`;
+    case 'pack': return `noch ${plural(n, 'Fund', 'Funde')} freilegen`;
+    case 'boots': return `noch ${plural(n, 'Tag', 'Tage')} mit vollem Wasser`;
+    default: return `noch ${formatNumber(n)}`;
+  }
+}
+
 // ---------- Seite ----------
 
 export function ProfileView({ store, reload, notify }) {
@@ -92,7 +107,6 @@ export function ProfileView({ store, reload, notify }) {
           const g = gear[slot];
           const def = GEAR[slot];
           const empty = !g.tier.color;
-          const toNext = g.next ? g.next.at - g.value : 0;
           const fromAt = g.tier.at;
           const prog = g.next ? Math.min(100, ((g.value - fromAt) / (g.next.at - fromAt)) * 100) : 100;
           return html`
@@ -102,7 +116,7 @@ export function ProfileView({ store, reload, notify }) {
               <div class="item-slot">${def.label}</div>
               ${g.next
                 ? html`<div class="item-bar"><span style="width:${prog}%"></span></div>
-                  <div class="item-next">noch ${slot === 'pick' ? hours(toNext) : formatNumber(Math.ceil(toNext))} → ${g.next.name}</div>`
+                  <div class="item-next">${missingText(slot, g)}<br /><span class="item-goal">→ ${g.next.name}</span></div>`
                 : html`<div class="item-next max">Höchste Stufe</div>`}
             </div>`;
         })}
