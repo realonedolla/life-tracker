@@ -112,3 +112,17 @@ $$;
 
 revoke all on function public.create_profile(text), public.add_friend(text), public.remove_friend(uuid), public.delete_me() from public, anon;
 grant execute on function public.create_profile(text), public.add_friend(text), public.remove_friend(uuid), public.delete_me(), public.is_friend(uuid) to authenticated;
+
+
+-- Nachtrag: Charakter (Level, Titel, Aussehen und Ausrüstung) für Freunde sichtbar machen.
+alter table public.profiles add column if not exists level int not null default 1;
+alter table public.profiles add column if not exists title text;
+alter table public.profiles add column if not exists look jsonb;
+
+drop policy if exists "profiles: eigenes ändern" on public.profiles;
+create policy "profiles: eigenes ändern" on public.profiles
+  for update using (id = auth.uid()) with check (id = auth.uid());
+
+-- Nur Level, Titel und Aussehen dürfen direkt geändert werden (Name und Code nicht).
+revoke update on public.profiles from authenticated;
+grant update (level, title, look) on public.profiles to authenticated;

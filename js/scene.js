@@ -2,6 +2,7 @@
 // Alle Funktionen sind rein: gleiche Eingaben → gleiches Bild.
 
 import { GARDEN, GARDEN_PAL, PAL, PETALS, SPRITES, glow, hash, px, sprite } from './pixel.js';
+import { drawPet } from './character.js';
 import { rgb } from './sun.js';
 
 // ---------- Himmel ----------
@@ -238,7 +239,7 @@ function dayHash(date) {
   return Math.abs(h);
 }
 
-export function drawMeadow(ctx, w, h, { sky, lanterns, digger, ideas, garden }) {
+export function drawMeadow(ctx, w, h, { sky, lanterns, digger, garden, diggerPal, gear }) {
   const L = meadowLayout(w, lanterns.length, garden);
   const g = L.skyH;
   drawSky(ctx, w, g + 2, sky, g);
@@ -277,8 +278,6 @@ export function drawMeadow(ctx, w, h, { sky, lanterns, digger, ideas, garden }) 
   px(ctx, e, g - 12, '#a0703f', 15, 1);
   px(ctx, e + 3, g - 10, LAYERS.dirt.tunnel, 8, 10);
 
-  sprite(ctx, SPRITES.smallChest, PAL.chest, L.chestX, g - 6);
-  if (ideas > 0) glow(ctx, L.chestX + 3, g - 4, 5, '#ffe066', 0.18);
 
   lanterns.forEach((l, i) => {
     const x = L.lanterns[i];
@@ -289,7 +288,10 @@ export function drawMeadow(ctx, w, h, { sky, lanterns, digger, ideas, garden }) 
     sprite(ctx, SPRITES.lantern, l.lit ? PAL.lanternLit : PAL.lanternOff, x, L.lanternY, { alpha: l.due ? 1 : 0.45 });
   });
 
-  if (digger) sprite(ctx, SPRITES.digger, PAL.digger, L.diggerX, g - 12);
+  if (digger) {
+    sprite(ctx, SPRITES.digger, diggerPal || PAL.digger, L.diggerX, g - 12);
+    if (gear) drawPet(ctx, L.diggerX + 11, g, gear);
+  }
 }
 
 function drawBeds(ctx, w, L, garden) {
@@ -330,15 +332,15 @@ export const rowTop = (i) => LAYER_GEO.padTop + LAYER_GEO.signH + i * LAYER_GEO.
 const FIND_SPRITES = [['ore', PAL.ore], ['crystal', PAL.crystal], ['smallChest', PAL.chest]];
 
 // rows: [{ progress, valueFrac (nur Zahlenziele), digger }]
-export function drawLayer(ctx, w, h, { layer, prevLayer, rows, seed }) {
+export function drawLayer(ctx, w, h, { layer, prevLayer, rows, seed, diggerPal, gear }) {
   const pal = LAYERS[layer] || LAYERS.stone;
   fillRock(ctx, 0, 0, w, h, pal, seed);
   if (prevLayer) jaggedTop(ctx, w, LAYERS[prevLayer] || pal, seed);
   drawShaft(ctx, 0, h, pal);
-  rows.forEach((row, i) => drawTunnel(ctx, w, rowTop(i), row, pal, seed + i * 31));
+  rows.forEach((row, i) => drawTunnel(ctx, w, rowTop(i), row, pal, seed + i * 31, diggerPal, gear));
 }
 
-function drawTunnel(ctx, w, top, { progress, valueFrac, digger, digging, frame = 0 }, pal, seed) {
+function drawTunnel(ctx, w, top, { progress, valueFrac, digger, digging, frame = 0 }, pal, seed, diggerPal, gear) {
   const x0 = SHAFT.x + SHAFT.w;
   const xEnd = w - 8;
   const L = xEnd - x0;
@@ -404,9 +406,11 @@ function drawTunnel(ctx, w, top, { progress, valueFrac, digger, digging, frame =
 
   if (digger) {
     const dx = Math.max(x0 + 1, tip - 12);
-    glow(ctx, dx + 10, ty + 2, 6, '#fff6a0', 0.18);
+    const lamp = gear?.lamp.tier;
+    glow(ctx, dx + 10, ty + 2, lamp ? lamp.radius : 6, lamp ? lamp.color : '#fff6a0', 0.18);
     const swing = digging && frame % 2 === 1;
-    sprite(ctx, swing ? SPRITES.diggerSwing : SPRITES.digger, PAL.digger, dx, ty + th - 12);
+    if (gear && dx - 10 > x0) drawPet(ctx, dx - 10, ty + th, gear, frame);
+    sprite(ctx, swing ? SPRITES.diggerSwing : SPRITES.digger, diggerPal || PAL.digger, dx, ty + th - 12);
     // Beim Aufschlag fliegen Steinkrümel von der Tunnelwand.
     if (digging && !swing) {
       for (let i = 0; i < 5; i++) {
@@ -467,4 +471,45 @@ export function drawJug(ctx, frac, liters) {
     const y = Math.round(JUG_IN.y + JUG_IN.h - (l / liters) * JUG_IN.h);
     px(ctx, 11, y, 'rgba(255,255,255,0.75)', 3, 1);
   }
+}
+
+// ---------- Schatzkammer (Profil) ----------
+
+// Höhle mit Fackeln, leuchtenden Kristallen und Glitzer. frame treibt das Flackern.
+export function drawChamber(ctx, w, h, frame = 0) {
+  const pal = { ...LAYERS.stone, base: '#4a4e5a', dark: '#3a3d47', light: '#5e6270', speck: '#2a2c34' };
+  fillRock(ctx, 0, 0, w, h, pal, 41);
+  // Gewölbe: dunkle, runde Kammer in der Mitte.
+  const cx = w / 2, floor = h - 5;
+  for (let y = 4; y < floor; y++) {
+    const t = (floor - y) / (floor - 4);
+    const half = Math.round((w / 2 - 4) * Math.sqrt(1 - t * t * 0.85));
+    px(ctx, Math.round(cx - half), y, '#17141f', half * 2, 1);
+  }
+  // Boden mit Kante.
+  px(ctx, 0, floor, '#5e6270', w, 1);
+  px(ctx, 0, floor + 1, '#3a3d47', w, h - floor - 1);
+  for (let x = 0; x < w; x += 1) if (hash(x, 9, 3) > 0.7) px(ctx, x, floor + 1 + Math.floor(hash(x, 4, 3) * 3), '#2a2c34');
+  // Kristalle in den Wänden.
+  const crystals = [[0.12, 0.35, '#7ee8fa', '#2ca0c8'], [0.88, 0.3, '#c9a8ff', '#8a5cc4'], [0.2, 0.75, '#c9a8ff', '#8a5cc4'], [0.8, 0.72, '#7ee8fa', '#2ca0c8']];
+  crystals.forEach(([fx, fy, c, C], i) => {
+    const x = Math.round(fx * w), y = Math.round(fy * floor);
+    glow(ctx, x + 2, y + 3, 6 + ((frame + i) % 3 === 0 ? 1 : 0), c, 0.22);
+    sprite(ctx, SPRITES.crystal, { c, C, w: '#ffffff' }, x, y);
+  });
+  // Fackeln links und rechts mit flackerndem Licht.
+  [[0.3, 0.42], [0.7, 0.42]].forEach(([fx, fy], i) => {
+    const x = Math.round(fx * w), y = Math.round(fy * floor);
+    glow(ctx, x + 1, y + 1, 9 + ((frame + i) % 2), '#ffb84a', 0.22);
+    sprite(ctx, (frame + i) % 2 ? SPRITES.torch : [' f ', 'FfF', '.F.', '.k.', '.k.'], PAL.torch, x, y);
+  });
+  // Schwebender Glitzer.
+  for (let i = 0; i < 6; i++) {
+    const sx = Math.round(hash(i, 1, 7) * w);
+    const sy = Math.round((hash(i, 2, 7) * floor + frame * (0.6 + hash(i, 3, 7))) % floor);
+    if ((frame + i) % 3) px(ctx, sx, floor - sy, (i % 2) ? '#fff6a0' : '#bdf6ff');
+  }
+  // Kleine Truhe mit Gold rechts am Boden.
+  sprite(ctx, SPRITES.chest, PAL.chest, Math.round(w * 0.78) - 5, floor - 8);
+  glow(ctx, Math.round(w * 0.78), floor - 6, 5, '#ffe066', 0.18);
 }

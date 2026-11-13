@@ -10,15 +10,16 @@ import { World } from './views/world.js';
 import { Today } from './views/today.js';
 import { GoalView } from './views/goal.js';
 import { CalendarView } from './views/calendar.js';
-import { IdeasView } from './views/ideas.js';
+import { Celebration, ProfileView } from './views/profile.js';
+import { computeProfile, getLook, markSeen, newSinceLastSeen } from './profile.js';
 import { dueReminders } from './reminders.js';
-import { pushStats } from './sync.js';
+import { pushProfile, pushStats } from './sync.js';
 
 const TABS = [
   ['welt', 'Welt'],
   ['heute', 'Heute'],
   ['kalender', 'Kalender'],
-  ['ideen', 'Ideen'],
+  ['profil', 'Profil'],
 ];
 const ROUTES = [...TABS.map(([key]) => key), 'daten'];
 
@@ -44,10 +45,10 @@ function useRoute() {
 function useStore() {
   const [state, setState] = useState(null);
   const reload = useCallback(async () => {
-    const [data, settings, lastExportAt] = await Promise.all([
-      db.dumpAll(), getSettings(), db.getMeta('lastExportAt'),
+    const [data, settings, lastExportAt, look] = await Promise.all([
+      db.dumpAll(), getSettings(), db.getMeta('lastExportAt'), getLook(),
     ]);
-    setState({ ...data, settings, lastExportAt, today: dayKey() });
+    setState({ ...data, settings, lastExportAt, look, today: dayKey() });
   }, []);
   useEffect(() => { reload(); }, [reload]);
   return [state, reload];
@@ -102,10 +103,25 @@ function App() {
     return () => clearInterval(t);
   }, [store, notify]);
 
+  // Neues Level, neue Ausrüstung oder neues Abzeichen? Dann kurz feiern.
+  const [celebration, setCelebration] = useState(null);
+  useEffect(() => {
+    if (!store || celebration) return;
+    newSinceLastSeen(computeProfile(store)).then((found) => { if (found) setCelebration(found); });
+  }, [store]);
+  const closeCelebration = async () => {
+    await markSeen(celebration.now);
+    setCelebration(null);
+  };
+  const party = celebration && html`<${Celebration} news=${celebration.news} onClose=${closeCelebration} />`;
+
   // Geteilte Tageswerte aktuell halten: nach Änderungen gebündelt hochladen.
   useEffect(() => {
     if (!store) return undefined;
-    const t = setTimeout(() => pushStats(store).catch(() => {}), 4000);
+    const t = setTimeout(() => {
+      pushStats(store).catch(() => {});
+      pushProfile(store.look, computeProfile(store)).catch(() => {});
+    }, 4000);
     return () => clearTimeout(t);
   }, [store]);
 
@@ -117,6 +133,7 @@ function App() {
         <${GoalView} store=${store} reload=${reload} notify=${notify} goalId=${route.slice(5)} />
         <${TabBar} route="welt" />
         ${toast && html`<div class="toast ${toast.kind}" role="status" key=${toast.id}>${toast.text}</div>`}
+        ${party}
       </div>`;
   }
 
@@ -126,6 +143,7 @@ function App() {
         <${World} store=${store} reload=${reload} notify=${notify} />
         <${TabBar} route=${route} />
         ${toast && html`<div class="toast ${toast.kind}" role="status" key=${toast.id}>${toast.text}</div>`}
+        ${party}
       </div>`;
   }
 
@@ -145,12 +163,13 @@ function App() {
         ${route === 'daten' && html`<${DataView} store=${store} reload=${reload} notify=${notify} />`}
         ${route === 'heute' && html`<${Today} store=${store} reload=${reload} notify=${notify} />`}
         ${route === 'kalender' && html`<${CalendarView} store=${store} />`}
-        ${route === 'ideen' && html`<${IdeasView} store=${store} reload=${reload} notify=${notify} />`}
+        ${route === 'profil' && html`<${ProfileView} store=${store} reload=${reload} notify=${notify} />`}
       </main>
 
       <${TabBar} route=${route} />
 
       ${toast && html`<div class="toast ${toast.kind}" role="status" key=${toast.id}>${toast.text}</div>`}
+      ${party}
     </div>`;
 }
 

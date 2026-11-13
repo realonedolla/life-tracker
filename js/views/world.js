@@ -18,6 +18,8 @@ import { SessionCard, StartSheet, StopSheet, startFromEntry } from './session.js
 import { NewGoalSheet, openGoal } from './goal.js';
 import { decayLabel, gardenState, greySky } from '../garden.js';
 import { ReminderBar } from './reminders.js';
+import { computeProfile } from '../profile.js';
+import { smallPalette } from '../character.js';
 
 // Scrollposition der Welt, damit „Zurück“ aus der Detailansicht an derselben Stelle landet.
 let savedScroll = null;
@@ -72,6 +74,8 @@ export function World({ store, reload, notify }) {
   const { location } = store.settings;
   const times = useMemo(() => sunTimes(now, location.lat, location.lon), [store.today, location.lat, location.lon]);
   const garden = useMemo(() => gardenState(store), [store]);
+  const gear = useMemo(() => computeProfile(store).gear, [store]);
+  const diggerPal = smallPalette(store.look, gear);
   const sky = greySky(skyState(now, times), garden.grey);
   const body = sky.sun || sky.moon;
   const skyH = meadowSkyH(garden);
@@ -117,6 +121,7 @@ export function World({ store, reload, notify }) {
       </section>
 
       <${Meadow} store=${store} sky=${sky} skyKey=${skyKey} diggerOnSurface=${!digger} garden=${garden}
+        diggerPal=${diggerPal} gear=${gear}
         onLantern=${(item) => setSheet({ type: 'lantern', item })}
         onStructure=${(st) => setSheet({ type: 'structure', st })}
         onGarden=${() => setSheet({ type: 'garden' })} />
@@ -128,7 +133,7 @@ export function World({ store, reload, notify }) {
         </section>`}
       ${areas.map((area, i) => html`
         <${Layer} key=${area.id} area=${area} index=${i} prevLayer=${i ? areas[i - 1].layer : 'dirt'}
-          store=${store} digger=${digger} onGoal=${onGoal}
+          store=${store} digger=${digger} onGoal=${onGoal} diggerPal=${diggerPal} gear=${gear}
           onNewGoal=${() => setSheet({ type: 'newGoal', areaId: area.id })} />`)}
 
       <section class="bedrock">
@@ -361,31 +366,25 @@ function PhotoSlot({ slot, photo, onSave, onOpen }) {
 
 // ---------- Wiese ----------
 
-function Meadow({ store, sky, skyKey, diggerOnSurface, garden, onLantern, onStructure, onGarden }) {
+function Meadow({ store, sky, skyKey, diggerOnSurface, garden, diggerPal, gear, onLantern, onStructure, onGarden }) {
   const [ref, measured] = useArtWidth();
   const w = measured || REF_W;
   const lanterns = lanternList(store);
-  const ideas = store.ideas.filter((i) => i.status === 'open').length;
   const layout = meadowLayout(w, lanterns.length, garden);
   const gardenKey = `${garden.plants.length}:${garden.wilted}:${garden.weeds}:${garden.fountainDry}:${garden.watered}:${garden.structures.map((s) => s.id).join()}`;
-  const deps = [skyKey, w, diggerOnSurface, ideas, gardenKey, lanterns.map((l) => `${l.lit}${l.bonus}${l.due}`).join()];
+  const deps = [skyKey, w, diggerOnSurface, gardenKey, JSON.stringify(diggerPal), gear.pet.index, lanterns.map((l) => `${l.lit}${l.bonus}${l.due}`).join()];
   const g = layout.skyH;
 
   return html`
     <section class="meadow" ref=${ref} style="height:${layout.h * P}px">
       <${PixelCanvas} deps=${deps}
-        draw=${(ctx, cw, ch) => drawMeadow(ctx, cw, ch, { sky, lanterns, digger: diggerOnSurface, ideas, garden })} />
+        draw=${(ctx, cw, ch) => drawMeadow(ctx, cw, ch, { sky, lanterns, digger: diggerOnSurface, garden, diggerPal, gear })} />
       ${layout.structures.map((s) => html`
         <button key=${s.st.id} class="hit structure-hit"
           style="left:${(s.x - 1) * P}px;top:${(s.y - 1) * P}px;width:${(s.w + 2) * P}px;height:${Math.min(s.h + 2, s.baseY - s.y) * P}px"
           onClick=${() => onStructure(s.st)} aria-label=${s.st.name}></button>`)}
       <button class="hit garden-hit" style="left:${(SHAFT.x + SHAFT.w + 2) * P}px;right:0;top:${(g + 2) * P}px;height:${(layout.h - g - 10) * P}px"
         onClick=${onGarden} aria-label="Garten: ${garden.plants.length} Pflanzen. ${decayLabel(garden.decay)}"></button>
-      <a class="hit chest-hit" href="#/ideen"
-        style="left:${(layout.chestX - 2) * P}px;top:${(g - 9) * P}px;width:${11 * P}px;height:${10 * P}px"
-        aria-label="Ideen-Korb, ${ideas} unsortiert">
-        ${ideas > 0 && html`<span class="badge label">${ideas}</span>`}
-      </a>
       ${lanterns.map((l, i) => html`
         <button key=${l.routine.id} class="hit lantern-hit"
           style="left:${(layout.lanterns[i] - 3) * P}px;top:${layout.lanternY * P}px;width:${13 * P}px;height:${15 * P}px"
@@ -489,7 +488,7 @@ function PhotoSheet({ photo, reload, notify, onClose }) {
 
 // ---------- Schicht ----------
 
-function Layer({ area, index, prevLayer, store, digger, onGoal, onNewGoal }) {
+function Layer({ area, index, prevLayer, store, digger, onGoal, onNewGoal, diggerPal, gear }) {
   const [open, setOpen] = useState(false);
   const [frame, setFrame] = useState(0);
   const goals = store.goals
@@ -521,14 +520,14 @@ function Layer({ area, index, prevLayer, store, digger, onGoal, onNewGoal }) {
   const showNew = open || goals.length === 0;
   const NEW_ROW = 14;
   const h = layerHeight(rows.length) + (showNew ? NEW_ROW : 0);
-  const deps = [rows.map((r) => `${r.goal.id}:${r.progress.dug}:${r.progress.finds.map((f) => +f.reached).join('')}:${r.valueFrac}:${r.digger}`).join('|'), digging ? frame : -1];
+  const deps = [rows.map((r) => `${r.goal.id}:${r.progress.dug}:${r.progress.finds.map((f) => +f.reached).join('')}:${r.valueFrac}:${r.digger}`).join('|'), digging ? frame : -1, diggerPal && JSON.stringify(diggerPal), gear?.pet.index];
   const head = rows[0]?.progress;
   const x0 = (SHAFT.x + SHAFT.w) * P;
 
   return html`
     <section class="layer" style="height:${h * P}px">
       <${PixelCanvas} deps=${deps}
-        draw=${(ctx, w, ch) => drawLayer(ctx, w, ch, { layer: area.layer, prevLayer, rows, seed: 11 + index * 97 })} />
+        draw=${(ctx, w, ch) => drawLayer(ctx, w, ch, { layer: area.layer, prevLayer, rows, seed: 11 + index * 97, diggerPal, gear })} />
       <button class="sign" style="left:${x0 + 2 * P}px;top:${LAYER_GEO.padTop * P}px"
         onClick=${() => setOpen(!open)} aria-expanded=${open}>
         <span class="label">${area.name}${head ? ` ${head.done}/${head.total}` : ''}</span>

@@ -102,6 +102,25 @@ export async function pushStats(store) {
   await setState({ ...(await getState()), lastPush: Date.now() });
 }
 
+// Charakter (Level, Titel, Aussehen, Ausrüstungsstufen) für Freunde aktualisieren.
+// Wird nur gesendet, wenn sich etwas geändert hat.
+export async function pushProfile(look, profile) {
+  const s = await getState();
+  if (!syncConfigured() || !s?.joined) return;
+  const body = {
+    level: profile.level,
+    title: profile.title,
+    look: {
+      skin: look.skin, hair: look.hair, shirt: look.shirt,
+      gear: Object.fromEntries(Object.entries(profile.gear).map(([slot, g]) => [slot, g.index])),
+    },
+  };
+  const key = JSON.stringify(body);
+  if (s.lastProfile === key) return;
+  await call(`/rest/v1/profiles?id=eq.${s.userId}`, { method: 'PATCH', body, token: await token(), prefer: 'return=minimal' });
+  await setState({ ...(await getState()), lastProfile: key });
+}
+
 // Freunde mit ihren Tageswerten ab from.
 export async function fetchFriends(from) {
   const s = await getState();
@@ -111,7 +130,7 @@ export async function fetchFriends(from) {
   if (!links.length) return [];
   const ids = links.map((l) => l.friend_id).join(',');
   const [profiles, stats] = await Promise.all([
-    call(`/rest/v1/profiles?select=id,name&id=in.(${ids})`, { token: t }),
+    call(`/rest/v1/profiles?select=id,name,level,title,look&id=in.(${ids})`, { token: t }),
     call(`/rest/v1/day_stats?select=*&user_id=in.(${ids})&date=gte.${from}&order=date.asc`, { token: t }),
   ]);
   return profiles.map((p) => ({ ...p, days: stats.filter((d) => d.user_id === p.id) }));

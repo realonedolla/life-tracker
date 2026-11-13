@@ -38,15 +38,15 @@ const ICONS = {
     'x.......x',
     'xxxxxxxxx',
   ],
-  ideen: [
+  profil: [
+    '..xxxxx..',
+    '.xxxxxxxo',
+    'xxxxxxxxx',
     '.........',
-    '.xxxxxxx.',
-    'x.......x',
-    'xxxxxxxxx',
-    'x...o...x',
-    'x..ooo..x',
-    'x.......x',
-    'xxxxxxxxx',
+    '..x...x..',
+    '..x...x..',
+    '.........',
+    '..xxxxx..',
     '.........',
   ],
   daten: [

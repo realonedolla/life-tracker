@@ -1,7 +1,10 @@
 // Freunde: mitmachen, Code teilen, Freunde hinzufügen und gegenseitig den Stand sehen.
 
-import { html, useEffect, useState } from '../vendor/preact-htm.js';
+import { html, useEffect, useMemo, useRef, useState } from '../vendor/preact-htm.js';
 import { dayProductivity, streak } from '../model.js';
+import { DEFAULT_LOOK, GEAR, drawPet, smallPalette } from '../character.js';
+import { SPRITES, sprite } from '../pixel.js';
+import { computeProfile } from '../profile.js';
 import { addDays, formatDate } from '../time.js';
 import {
   addFriend, fetchFriends, join, leave, pushStats, removeFriend, syncConfigured, syncState,
@@ -123,13 +126,37 @@ function Squares({ days, from }) {
     </div>`;
 }
 
-function PersonRow({ name, days, from, today, you }) {
+// Ausrüstung aus den geteilten Stufen (Zahlen) wiederherstellen.
+function gearFromIndices(indices = {}) {
+  return Object.fromEntries(Object.keys(GEAR).map((slot) => {
+    const i = Math.min(indices[slot] ?? 0, GEAR[slot].tiers.length - 1);
+    return [slot, { index: i, tier: GEAR[slot].tiers[i] }];
+  }));
+}
+
+// Kleiner Gräber mit Begleiter, wie in der Welt.
+function MiniDigger({ look, gear }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const ctx = ref.current.getContext('2d');
+    ctx.clearRect(0, 0, 22, 14);
+    if (gear.pet.index > 0) drawPet(ctx, 0, 13, gear);
+    sprite(ctx, SPRITES.digger, smallPalette({ ...DEFAULT_LOOK, ...look }, gear), 11, 1);
+  }, [look, gear]);
+  return html`<canvas class="mini-digger" ref=${ref} width="22" height="14" aria-hidden="true"></canvas>`;
+}
+
+function PersonRow({ name, days, from, today, you, look, gear, level, title }) {
   const t = days.find((d) => d.date === today);
   return html`
     <li class="friend-row ${you ? 'you' : ''}">
       <div class="friend-head">
-        <b>${name}${you ? ' (du)' : ''}</b>
-        <span class="small">${t ? (t.gold ? 'Gold-Tag' : `heute ${pct(t.score)}`) : 'heute noch nichts'}${t?.streak ? ` · Streak ${t.streak}` : ''}</span>
+        <${MiniDigger} look=${look} gear=${gear} />
+        <span class="friend-id">
+          <b>${name}${you ? ' (du)' : ''}</b>
+          ${level && html`<span class="friend-level small">Lv ${level}${title ? ` · ${title}` : ''}</span>`}
+        </span>
+        <span class="small friend-today">${t ? (t.gold ? 'Gold-Tag' : `heute ${pct(t.score)}`) : 'heute noch nichts'}${t?.streak ? ` · Streak ${t.streak}` : ''}</span>
       </div>
       ${t && html`<div class="muted small">Routinen ${t.routines_done}/${t.routines_total} · Arbeit ${hours(t.work_hours)} · Wasser ${(t.water_ml / 1000).toLocaleString('de-DE')} l</div>`}
       <${Squares} days=${days} from=${from} />
@@ -148,6 +175,7 @@ export function FriendsBoard({ store }) {
     fetchFriends(from).then(setFriends).catch((e) => setError(e.message));
   }, [state?.joined, store.today]);
 
+  const me = useMemo(() => computeProfile(store), [store]);
   if (!syncConfigured() || !state?.joined) return null;
 
   // Eigene Zeile aus den lokalen Daten, damit sie auch offline stimmt.
@@ -165,8 +193,10 @@ export function FriendsBoard({ store }) {
       <h2 class="label">Du und Freunde</h2>
       <p class="muted small">Letzte ${DAYS_SHOWN} Tage, seit ${formatDate(from, { day: 'numeric', month: 'long' })}</p>
       <ul class="list">
-        <${PersonRow} name=${state.name} days=${own} from=${from} today=${store.today} you />
-        ${(friends || []).map((f) => html`<${PersonRow} key=${f.id} name=${f.name} days=${f.days} from=${from} today=${store.today} />`)}
+        <${PersonRow} name=${state.name} days=${own} from=${from} today=${store.today} you
+          look=${store.look} gear=${me.gear} level=${me.level} title=${me.title} />
+        ${(friends || []).map((f) => html`<${PersonRow} key=${f.id} name=${f.name} days=${f.days} from=${from} today=${store.today}
+          look=${f.look || DEFAULT_LOOK} gear=${gearFromIndices(f.look?.gear)} level=${f.level} title=${f.title} />`)}
       </ul>
       ${friends && friends.length === 0 && html`<p class="muted small">Noch keine Freunde. Teil deinen Code unter dem Zahnrad.</p>`}
       ${error && html`<p class="muted small">Freunde konnten nicht geladen werden (${error}).</p>`}

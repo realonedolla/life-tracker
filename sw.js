@@ -1,7 +1,7 @@
 // Service Worker: hält die App-Dateien offline vor. Daten liegen in IndexedDB, nicht hier.
 // VERSION bei jeder Veröffentlichung erhöhen, damit das iPhone die neuen Dateien lädt.
 
-const VERSION = 'v9-5';
+const VERSION = 'v10-1';
 const CACHE = `lt-${VERSION}`;
 const FILES = [
   './',
@@ -31,7 +31,6 @@ const FILES = [
   './js/views/session.js',
   './js/views/goal.js',
   './js/views/calendar.js',
-  './js/views/ideas.js',
   './js/sun.js',
   './js/pixel.js',
   './js/scene.js',
@@ -40,6 +39,9 @@ const FILES = [
   './js/views/reminders.js',
   './js/views/setup.js',
   './js/views/friends.js',
+  './js/views/profile.js',
+  './js/character.js',
+  './js/profile.js',
 ];
 
 // Beim Installieren alle Dateien am HTTP-Cache vorbei laden (cache: 'reload'),
