@@ -7,7 +7,8 @@ import { SPRITES, sprite } from '../pixel.js';
 import { computeProfile } from '../profile.js';
 import { addDays, formatDate } from '../time.js';
 import {
-  addFriend, fetchFriends, join, leave, pushStats, removeFriend, syncConfigured, syncState,
+  addFriend, dismissRepair, ensureProfile, extractCode, fetchFriends, join, leave, pushStats, removeFriend,
+  syncConfigured, syncState,
 } from '../sync.js';
 
 const DAYS_SHOWN = 14;
@@ -31,7 +32,20 @@ export function FriendsSetup({ store, notify }) {
   const [busy, setBusy] = useState(false);
 
   const loadFriends = () => fetchFriends(store.today).then(setFriends).catch(() => {});
-  useEffect(() => { if (state?.joined) loadFriends(); }, [state?.joined]);
+  useEffect(() => {
+    if (!state?.joined) return;
+    // Verbindung prüfen (und ggf. reparieren), dann Freunde laden.
+    ensureProfile().then(refresh).catch(() => {}).finally(loadFriends);
+  }, [state?.joined]);
+  const recognized = extractCode(code);
+  const share = async () => {
+    const text = `Mein Code für den Life Tracker:\n${state.code}`;
+    if (navigator.share) {
+      try { await navigator.share({ text }); } catch {}
+    } else {
+      try { await navigator.clipboard.writeText(state.code); notify('Code kopiert.'); } catch { notify(text); }
+    }
+  };
 
   const run = async (fn, okText) => {
     setBusy(true);
@@ -67,18 +81,19 @@ export function FriendsSetup({ store, notify }) {
       </section>`;
   }
 
-  const share = async () => {
-    const text = `Mein Code für den Life Tracker: ${state.code}`;
-    if (navigator.share) {
-      try { await navigator.share({ text }); } catch {}
-    } else {
-      try { await navigator.clipboard.writeText(state.code); notify('Code kopiert.'); } catch { notify(text); }
-    }
-  };
+
 
   return html`
     <section class="panel">
       <h2 class="label">Freunde</h2>
+      ${state.repaired && html`
+        <div class="repair-note">
+          <p><b>Deine Verbindung wurde erneuert.</b> Dein neuer Code ist <span class="code">${state.code}</span>${state.repaired.oldCode ? ` (vorher ${state.repaired.oldCode})` : ''}. Schick ihn deinem Freund noch einmal, damit ihr euch wieder seht.</p>
+          <div class="row">
+            <button class="btn" onClick=${share}>Neuen Code teilen</button>
+            <button class="btn secondary" onClick=${() => dismissRepair().then(refresh)}>Erledigt</button>
+          </div>
+        </div>`}
       <dl class="kv">
         <dt>Dein Name</dt><dd>${state.name}</dd>
         <dt>Dein Code</dt><dd class="code">${state.code}</dd>
@@ -90,8 +105,10 @@ export function FriendsSetup({ store, notify }) {
         e.preventDefault();
         run(async () => { const f = await addFriend(code); setCode(''); await loadFriends(); notify(`${f.name} ist jetzt dein Freund.`); });
       }}>
-        <input value=${code} maxlength="6" autocapitalize="characters" onInput=${(e) => setCode(e.target.value.toUpperCase())} placeholder="Code eines Freundes" aria-label="Code eines Freundes" />
-        <button class="btn" type="submit" disabled=${busy || code.trim().length !== 6}>Hinzufügen</button>
+        ${code && html`<p class="small code-hint ${recognized ? '' : 'warn'}">${recognized ? html`Erkannter Code: <span class="code">${recognized}</span>` : 'Noch kein 6-stelliger Code erkannt.'}</p>`}
+        <input value=${code} autocapitalize="characters" autocomplete="off" onInput=${(e) => setCode(e.target.value)}
+          placeholder="Code oder Nachricht einfügen" aria-label="Code eines Freundes" />
+        <button class="btn" type="submit" disabled=${busy || !recognized}>Hinzufügen</button>
       </form>
 
       ${friends.length > 0 && html`

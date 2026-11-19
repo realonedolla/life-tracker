@@ -814,3 +814,9 @@ body.sheet-open { overflow: hidden; }
 @keyframes pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .celebrate-card { animation: none; } .xp-bar span::after { animation: none; } }
 .celebrate-card { max-height: 85vh; overflow: auto; }
+
+.repair-note { margin: 0 0 12px; padding: 10px 12px; background: var(--bg); border: 2px solid var(--gold-dark); }
+.repair-note p { margin: 0 0 8px; }
+.friend-form { flex-wrap: wrap; }
+.code-hint { flex-basis: 100%; margin: 6px 0 0; }
+.friend-form input { text-transform: none; letter-spacing: normal; }
